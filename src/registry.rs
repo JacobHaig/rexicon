@@ -56,6 +56,11 @@ pub fn built_in_languages() -> Vec<Language> {
             lsp_command: Some("zls"),
         },
         Language {
+            name: "shell",
+            extensions: &["sh", "bash"],
+            lsp_command: None,
+        },
+        Language {
             name: "markdown",
             extensions: &["md", "mdx"],
             lsp_command: Some("marksman"),

@@ -9,14 +9,20 @@ pub struct SourceFile {
     pub language: Language,
 }
 
-/// Returns every non-hidden, non-gitignored file under `root`, sorted by
-/// relative path. Excludes `exclude` (the output file) if it falls inside `root`.
+/// Returns every non-gitignored file under `root`, sorted by relative path.
+/// Hidden directories (dotfiles) are included — only the `.git` directory is
+/// always excluded. Excludes `exclude` (the output file) if it falls inside `root`.
 pub fn walk_all(root: &Path, exclude: Option<&Path>) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = WalkBuilder::new(root)
+        .hidden(false)
         .build()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
         .filter_map(|e| e.path().strip_prefix(root).ok().map(|p| p.to_owned()))
+        .filter(|rel| {
+            // Never include .git internals.
+            !rel.components().any(|c| c.as_os_str() == ".git")
+        })
         .filter(|rel| Some(rel.as_path()) != exclude)
         .collect();
     paths.sort();

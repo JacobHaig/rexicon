@@ -247,6 +247,14 @@ const CS_BODY: &[&str] = &[
 ];
 const CS_VALUE: &[&str] = &[];
 
+// --- Shell (Bash) ---
+const SHELL_TOP: &[(&str, SymbolKind)] = &[
+    ("function_definition", SymbolKind::Function),
+];
+const SHELL_NESTED: &[(&str, &str, SymbolKind)] = &[];
+const SHELL_BODY: &[&str] = &["compound_statement"];
+const SHELL_VALUE: &[&str] = &[];
+
 fn lang_rules(lang_name: &str) -> Option<LangRules> {
     match lang_name {
         "rust" => Some(LangRules {
@@ -291,6 +299,12 @@ fn lang_rules(lang_name: &str) -> Option<LangRules> {
             body_kinds: CS_BODY,
             value_kinds: CS_VALUE,
         }),
+        "shell" => Some(LangRules {
+            top_level: SHELL_TOP,
+            nested: SHELL_NESTED,
+            body_kinds: SHELL_BODY,
+            value_kinds: SHELL_VALUE,
+        }),
         _ => None,
     }
 }
@@ -304,6 +318,7 @@ fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> {
         "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
         "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "c_sharp" => Some(tree_sitter_c_sharp::LANGUAGE.into()),
+        "shell" => Some(tree_sitter_bash::LANGUAGE.into()),
         // markdown is handled separately via line scanning, not tree-sitter
         _ => None,
     }
