@@ -247,6 +247,50 @@ const CS_BODY: &[&str] = &[
 ];
 const CS_VALUE: &[&str] = &[];
 
+// --- Java ---
+const JAVA_TOP: &[(&str, SymbolKind)] = &[
+    ("class_declaration", SymbolKind::Class),
+    ("interface_declaration", SymbolKind::Interface),
+    ("enum_declaration", SymbolKind::Enum),
+    ("annotation_type_declaration", SymbolKind::Interface),
+];
+const JAVA_NESTED: &[(&str, &str, SymbolKind)] = &[
+    ("class_declaration", "method_declaration", SymbolKind::Method),
+    (
+        "class_declaration",
+        "constructor_declaration",
+        SymbolKind::Function,
+    ),
+    (
+        "class_declaration",
+        "field_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "class_declaration",
+        "class_declaration",
+        SymbolKind::Class,
+    ),
+    (
+        "interface_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "interface_declaration",
+        "constant_declaration",
+        SymbolKind::Constant,
+    ),
+    ("enum_declaration", "enum_constant", SymbolKind::Variant),
+    (
+        "enum_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+];
+const JAVA_BODY: &[&str] = &["class_body", "interface_body", "enum_body", "block"];
+const JAVA_VALUE: &[&str] = &[];
+
 // --- Shell (Bash) ---
 const SHELL_TOP: &[(&str, SymbolKind)] = &[
     ("function_definition", SymbolKind::Function),
@@ -299,6 +343,12 @@ fn lang_rules(lang_name: &str) -> Option<LangRules> {
             body_kinds: CS_BODY,
             value_kinds: CS_VALUE,
         }),
+        "java" => Some(LangRules {
+            top_level: JAVA_TOP,
+            nested: JAVA_NESTED,
+            body_kinds: JAVA_BODY,
+            value_kinds: JAVA_VALUE,
+        }),
         "shell" => Some(LangRules {
             top_level: SHELL_TOP,
             nested: SHELL_NESTED,
@@ -318,6 +368,7 @@ fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> {
         "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
         "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "c_sharp" => Some(tree_sitter_c_sharp::LANGUAGE.into()),
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
         "shell" => Some(tree_sitter_bash::LANGUAGE.into()),
         // markdown is handled separately via line scanning, not tree-sitter
         _ => None,

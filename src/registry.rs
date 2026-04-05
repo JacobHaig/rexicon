@@ -51,6 +51,11 @@ pub fn built_in_languages() -> Vec<Language> {
             lsp_command: Some("OmniSharp"),
         },
         Language {
+            name: "java",
+            extensions: &["java"],
+            lsp_command: Some("jdtls"),
+        },
+        Language {
             name: "zig",
             extensions: &["zig"],
             lsp_command: Some("zls"),
