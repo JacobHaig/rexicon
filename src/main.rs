@@ -53,8 +53,8 @@ fn main() -> Result<()> {
 
     let languages = registry::built_in_languages();
 
-    let all_files = walker::walk_all(&root, output_rel.as_deref(), args.no_ignore);
-    let source_files = walker::walk(&root, &languages, args.no_ignore);
+    let (all_files, source_files) =
+        walker::walk(&root, &languages, output_rel.as_deref(), args.no_ignore);
 
     // Extract symbols in parallel; failed files are skipped with a warning.
     let mut indices: Vec<symbol::FileIndex> = source_files
