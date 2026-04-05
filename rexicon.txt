@@ -2,100 +2,107 @@
 
 rexicon/
 ├── CLAUDE.md  [markdown]
-│   ├── # CLAUDE.md
-│   │   ├── ## Project Purpose
-│   │   ├── ## Commands
-│   │   ├── ## Design philosophy
-│   │   ├── ## Pipeline
-│   │   ├── ## Source layout
-│   │   ├── ## Language support
-│   │   ├── ## Core types
-│   │   └── ## Expected output (`rexicon.txt`)
-│   └── # rexicon — my-project
-│       └── ## Relevant crates
+│   ├── # CLAUDE.md  [1]
+│   │   ├── ## Project Purpose  [5]
+│   │   ├── ## Commands  [11]
+│   │   ├── ## Design philosophy  [24]
+│   │   ├── ## Pipeline  [31]
+│   │   ├── ## Source layout  [47]
+│   │   ├── ## Language support  [62]
+│   │   ├── ## Core types  [77]
+│   │   └── ## Expected output (`rexicon.txt`)  [106]
+│   └── # rexicon — my-project  [111]
+│       └── ## Relevant crates  [165]
 ├── Cargo.lock
 ├── Cargo.toml
 └── src/
     ├── formatter.rs  [rust]
-    │   ├── enum TreeNode { ... }
-    │   │   ├── Dir { ... }
-    │   │   └── File { ... }
-    │   ├── pub fn format(all_files: &[PathBuf], indices: &[FileIndex], project_name: &str) -> String { ... }
-    │   ├── fn insert_path(nodes: &mut Vec<TreeNode>, path: &Path, index: &HashMap<PathBuf, &FileIndex>) { ... }
-    │   ├── fn insert_components( nodes: &mut Vec<TreeNode>, components: &[Component], full_path: &Path, index: &HashMap<PathBuf, &FileIndex>, ) { ... }
-    │   ├── fn sort_nodes(nodes: &mut Vec<TreeNode>) { ... }
-    │   ├── fn node_name(n: &TreeNode) -> &str { ... }
-    │   ├── fn render_nodes(nodes: &[TreeNode], prefix: &str, out: &mut String) { ... }
-    │   └── fn render_symbols(symbols: &[Symbol], prefix: &str, out: &mut String) { ... }
+    │   ├── enum TreeNode { ... }  [9:20]
+    │   │   ├── Dir { ... }  [10:13]
+    │   │   └── File { ... }  [14:19]
+    │   ├── pub fn format(all_files: &[PathBuf], indices: &[FileIndex], project_name: &str) -> String { ... }  [27:42]
+    │   ├── fn insert_path(nodes: &mut Vec<TreeNode>, path: &Path, index: &HashMap<PathBuf, &FileIndex>) { ... }  [48:51]
+    │   ├── fn insert_components( nodes: &mut Vec<TreeNode>, components: &[Component], full_path: &Path, index: &HashMap<PathBuf, &FileIndex>, ) { ... }  [53:91]
+    │   ├── fn sort_nodes(nodes: &mut Vec<TreeNode>) { ... }  [94:101]
+    │   ├── fn node_name(n: &TreeNode) -> &str { ... }  [103:108]
+    │   ├── fn render_nodes(nodes: &[TreeNode], prefix: &str, out: &mut String) { ... }  [114:140]
+    │   └── fn render_symbols(symbols: &[Symbol], prefix: &str, out: &mut String) { ... }  [142:162]
     ├── main.rs  [rust]
-    │   ├── mod formatter;
-    │   ├── mod output;
-    │   ├── mod registry;
-    │   ├── mod symbol;
-    │   ├── mod treesitter;
-    │   ├── mod walker;
-    │   ├── struct Args { ... }
-    │   └── fn main() -> Result<()> { ... }
+    │   ├── mod formatter;  [1]
+    │   ├── mod output;  [2]
+    │   ├── mod registry;  [3]
+    │   ├── mod symbol;  [4]
+    │   ├── mod treesitter;  [5]
+    │   ├── mod walker;  [6]
+    │   ├── struct Args { ... }  [18:25]
+    │   └── fn main() -> Result<()> { ... }  [27:75]
     ├── output.rs  [rust]
-    │   └── pub fn write_output(text: &str, path: &Path) -> Result<()> { ... }
+    │   └── pub fn write_output(text: &str, path: &Path) -> Result<()> { ... }  [4:7]
     ├── registry.rs  [rust]
-    │   ├── pub struct Language { ... }
-    │   ├── pub fn built_in_languages() -> Vec<Language> { ... }
-    │   └── pub fn detect_language<'a>(path: &Path, languages: &'a [Language]) -> Option<&'a Language> { ... }
+    │   ├── pub struct Language { ... }  [5:9]
+    │   ├── pub fn built_in_languages() -> Vec<Language> { ... }  [11:64]
+    │   └── pub fn detect_language<'a>(path: &Path, languages: &'a [Language]) -> Option<&'a Language> { ... }  [66:69]
     ├── symbol.rs  [rust]
-    │   ├── pub enum SymbolKind { ... }
-    │   │   ├── Function
-    │   │   ├── Method
-    │   │   ├── Struct
-    │   │   ├── Enum
-    │   │   ├── Trait
-    │   │   ├── Interface
-    │   │   ├── Class
-    │   │   ├── Constant
-    │   │   ├── TypeAlias
-    │   │   ├── Module
-    │   │   ├── Impl
-    │   │   ├── Variant
-    │   │   ├── Macro
-    │   │   └── Heading { ... }
-    │   ├── pub struct Symbol { ... }
-    │   └── pub struct FileIndex { ... }
+    │   ├── pub enum SymbolKind { ... }  [4:19]
+    │   │   ├── Function  [5]
+    │   │   ├── Method  [6]
+    │   │   ├── Struct  [7]
+    │   │   ├── Enum  [8]
+    │   │   ├── Trait  [9]
+    │   │   ├── Interface  [10]
+    │   │   ├── Class  [11]
+    │   │   ├── Constant  [12]
+    │   │   ├── TypeAlias  [13]
+    │   │   ├── Module  [14]
+    │   │   ├── Impl  [15]
+    │   │   ├── Variant  [16]
+    │   │   ├── Macro  [17]
+    │   │   └── Heading { ... }  [18]
+    │   ├── pub struct Symbol { ... }  [22:31]
+    │   └── pub struct FileIndex { ... }  [34:38]
     ├── treesitter.rs  [rust]
-    │   ├── struct LangRules { ... }
-    │   ├── const RUST_TOP: &[(&str, SymbolKind)] = &[ ("function_item", SymbolKind::Function), ("struct_item", SymbolKind::Struct), ("enum_item", SymbolKind::Enum), ("trait_item", SymbolKind::Trait), ("type_item", SymbolKind::TypeAlias), ("const_item", SymbolKind::Constant), ("static_item", SymbolKind::Constant), ("impl_item", SymbolKind::Impl), ("mod_item", SymbolKind::Module), ("macro_definition", SymbolKind::Macro), ];
-    │   ├── const RUST_NESTED: &[(&str, &str, SymbolKind)] = &[ ("impl_item", "function_item", SymbolKind::Method), ("trait_item", "function_item", SymbolKind::Method), ("enum_item", "enum_variant", SymbolKind::Variant), ("mod_item", "function_item", SymbolKind::Function), ("mod_item", "struct_item", SymbolKind::Struct), ("mod_item", "enum_item", SymbolKind::Enum), ("mod_item", "trait_item", SymbolKind::Trait), ("mod_item", "impl_item", SymbolKind::Impl), ];
-    │   ├── const RUST_BODY: &[&str] = &[ "block", "field_declaration_list", "ordered_field_declaration_list", "enum_variant_list", "declaration_list", ];
-    │   ├── const PYTHON_TOP: &[(&str, SymbolKind)] = &[ ("function_definition", SymbolKind::Function), ("async_function_definition", SymbolKind::Function), ("class_definition", SymbolKind::Class), ("decorated_definition", SymbolKind::Function), ];
-    │   ├── const PYTHON_NESTED: &[(&str, &str, SymbolKind)] = &[ ("class_definition", "function_definition", SymbolKind::Method), ("class_definition", "async_function_definition", SymbolKind::Method), ("class_definition", "decorated_definition", SymbolKind::Method), ];
-    │   ├── const PYTHON_BODY: &[&str] = &["block"];
-    │   ├── const GO_TOP: &[(&str, SymbolKind)] = &[ ("function_declaration", SymbolKind::Function), ("method_declaration", SymbolKind::Method), ("type_declaration", SymbolKind::TypeAlias), ("const_declaration", SymbolKind::Constant), ("var_declaration", SymbolKind::Constant), ];
-    │   ├── const GO_NESTED: &[(&str, &str, SymbolKind)] = &[];
-    │   ├── const GO_BODY: &[&str] = &["block"];
-    │   ├── const C_TOP: &[(&str, SymbolKind)] = &[ ("function_definition", SymbolKind::Function), ("declaration", SymbolKind::Constant), ("type_definition", SymbolKind::TypeAlias), ("struct_specifier", SymbolKind::Struct), ("enum_specifier", SymbolKind::Enum), ("preproc_def", SymbolKind::Constant), ("preproc_function_def", SymbolKind::Macro), ];
-    │   ├── const C_NESTED: &[(&str, &str, SymbolKind)] = &[];
-    │   ├── const C_BODY: &[&str] = &["compound_statement", "field_declaration_list", "enumerator_list"];
-    │   ├── const JS_TOP: &[(&str, SymbolKind)] = &[ ("function_declaration", SymbolKind::Function), ("generator_function_declaration", SymbolKind::Function), ("class_declaration", SymbolKind::Class), ("lexical_declaration", SymbolKind::Constant), ("variable_declaration", SymbolKind::Constant), ("export_statement", SymbolKind::Function), ];
-    │   ├── const JS_NESTED: &[(&str, &str, SymbolKind)] = &[ ("class_declaration", "method_definition", SymbolKind::Method), ];
-    │   ├── const JS_BODY: &[&str] = &["statement_block", "class_body"];
-    │   ├── const TS_TOP: &[(&str, SymbolKind)] = &[ ("function_declaration", SymbolKind::Function), ("class_declaration", SymbolKind::Class), ("abstract_class_declaration", SymbolKind::Class), ("interface_declaration", SymbolKind::Interface), ("type_alias_declaration", SymbolKind::TypeAlias), ("enum_declaration", SymbolKind::Enum), ("lexical_declaration", SymbolKind::Constant), ("export_statement", SymbolKind::Function), ];
-    │   ├── const TS_NESTED: &[(&str, &str, SymbolKind)] = &[ ("class_declaration", "method_definition", SymbolKind::Method), ("abstract_class_declaration", "method_definition", SymbolKind::Method), ("interface_declaration", "method_signature", SymbolKind::Method), ("interface_declaration", "property_signature", SymbolKind::Constant), ("enum_declaration", "enum_member", SymbolKind::Variant), ];
-    │   ├── const TS_BODY: &[&str] = &["statement_block", "class_body", "object_type", "enum_body"];
-    │   ├── const CS_TOP: &[(&str, SymbolKind)] = &[ ("namespace_declaration", SymbolKind::Module), ("class_declaration", SymbolKind::Class), ("struct_declaration", SymbolKind::Struct), ("interface_declaration", SymbolKind::Interface), ("enum_declaration", SymbolKind::Enum), ("method_declaration", SymbolKind::Method), ("constructor_declaration", SymbolKind::Function), ("property_declaration", SymbolKind::Constant), ("field_declaration", SymbolKind::Constant), ];
-    │   ├── const CS_NESTED: &[(&str, &str, SymbolKind)] = &[ ("namespace_declaration", "class_declaration", SymbolKind::Class), ("namespace_declaration", "struct_declaration", SymbolKind::Struct), ("namespace_declaration", "interface_declaration", SymbolKind::Interface), ("namespace_declaration", "enum_declaration", SymbolKind::Enum), ("class_declaration", "method_declaration", SymbolKind::Method), ("class_declaration", "constructor_declaration", SymbolKind::Function), ("class_declaration", "property_declaration", SymbolKind::Constant), ("class_declaration", "field_declaration", SymbolKind::Constant), ("struct_declaration", "method_declaration", SymbolKind::Method), ("struct_declaration", "constructor_declaration", SymbolKind::Function), ("interface_declaration", "method_declaration", SymbolKind::Method), ("interface_declaration", "property_declaration", SymbolKind::Constant), ("enum_declaration", "enum_member_declaration", SymbolKind::Variant), ];
-    │   ├── const CS_BODY: &[&str] = &[ "block", "declaration_list", "enum_member_declaration_list", "accessor_list", ];
-    │   ├── fn lang_rules(lang_name: &str) -> Option<LangRules> { ... }
-    │   ├── fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> { ... }
-    │   ├── pub fn extract(file: &SourceFile) -> Result<FileIndex> { ... }
-    │   ├── fn collect_top_level(root: Node, source: &[u8], rules: &LangRules) -> Vec<Symbol> { ... }
-    │   ├── fn collect_nested( node: Node, source: &[u8], container_kind: &str, rules: &LangRules, ) -> Vec<Symbol> { ... }
-    │   ├── fn find_in_subtree( node: Node, source: &[u8], targets: &[(&str, SymbolKind)], body_kinds: &[&str], depth: u8, ) -> Vec<Symbol> { ... }
-    │   ├── fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str]) -> String { ... }
-    │   ├── fn normalize(s: &str) -> String { ... }
-    │   ├── fn extract_markdown(file: &SourceFile, source: &[u8]) -> Result<FileIndex> { ... }
-    │   ├── fn scan_headings(text: &str) -> Vec<(u8, String)> { ... }
-    │   ├── fn build_heading_tree(headings: Vec<(u8, String)>) -> Vec<Symbol> { ... }
-    │   └── fn heading_level(sym: &Symbol) -> u8 { ... }
+    │   ├── struct LangRules { ... }  [10:22]
+    │   ├── const RUST_TOP: &[(&str, SymbolKind)] = ...  [25:36]
+    │   ├── const RUST_NESTED: &[(&str, &str, SymbolKind)] = ...  [37:46]
+    │   ├── const RUST_BODY: &[&str] = ...  [47:53]
+    │   ├── const RUST_VALUE: &[&str] = ...  [55]
+    │   ├── const PYTHON_TOP: &[(&str, SymbolKind)] = ...  [58:63]
+    │   ├── const PYTHON_NESTED: &[(&str, &str, SymbolKind)] = ...  [64:68]
+    │   ├── const PYTHON_BODY: &[&str] = ...  [69]
+    │   ├── const PYTHON_VALUE: &[&str] = ...  [70]
+    │   ├── const GO_TOP: &[(&str, SymbolKind)] = ...  [73:79]
+    │   ├── const GO_NESTED: &[(&str, &str, SymbolKind)] = ...  [80]
+    │   ├── const GO_BODY: &[&str] = ...  [81]
+    │   ├── const GO_VALUE: &[&str] = ...  [83]
+    │   ├── const C_TOP: &[(&str, SymbolKind)] = ...  [86:94]
+    │   ├── const C_NESTED: &[(&str, &str, SymbolKind)] = ...  [95]
+    │   ├── const C_BODY: &[&str] = ...  [96]
+    │   ├── const C_VALUE: &[&str] = ...  [97]
+    │   ├── const JS_TOP: &[(&str, SymbolKind)] = ...  [100:107]
+    │   ├── const JS_NESTED: &[(&str, &str, SymbolKind)] = ...  [108:110]
+    │   ├── const JS_BODY: &[&str] = ...  [111]
+    │   ├── const JS_VALUE: &[&str] = ...  [112]
+    │   ├── const TS_TOP: &[(&str, SymbolKind)] = ...  [115:124]
+    │   ├── const TS_NESTED: &[(&str, &str, SymbolKind)] = ...  [125:131]
+    │   ├── const TS_BODY: &[&str] = ...  [132]
+    │   ├── const TS_VALUE: &[&str] = ...  [134]
+    │   ├── const CS_TOP: &[(&str, SymbolKind)] = ...  [137:147]
+    │   ├── const CS_NESTED: &[(&str, &str, SymbolKind)] = ...  [148:162]
+    │   ├── const CS_BODY: &[&str] = ...  [163:168]
+    │   ├── const CS_VALUE: &[&str] = ...  [169]
+    │   ├── fn lang_rules(lang_name: &str) -> Option<LangRules> { ... }  [171:217]
+    │   ├── fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> { ... }  [219:231]
+    │   ├── pub fn extract(file: &SourceFile) -> Result<FileIndex> { ... }  [237:263]
+    │   ├── fn collect_top_level(root: Node, source: &[u8], rules: &LangRules) -> Vec<Symbol> { ... }  [269:282]
+    │   ├── fn collect_nested( node: Node, source: &[u8], container_kind: &str, rules: &LangRules, ) -> Vec<Symbol> { ... }  [286:304]
+    │   ├── fn find_in_subtree( node: Node, source: &[u8], targets: &[(&str, SymbolKind)], rules: &LangRules, depth: u8, ) -> Vec<Symbol> { ... }  [309:332]
+    │   ├── fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str], value_kinds: &[&str]) -> String { ... }  [344:370]
+    │   ├── fn normalize(s: &str) -> String { ... }  [372:374]
+    │   ├── fn extract_markdown(file: &SourceFile, source: &[u8]) -> Result<FileIndex> { ... }  [381:393]
+    │   ├── fn scan_headings(text: &str) -> Vec<(u8, String, u32)> { ... }  [397:413]
+    │   ├── fn build_heading_tree(headings: Vec<(u8, String, u32)>) -> Vec<Symbol> { ... }  [418:456]
+    │   └── fn heading_level(sym: &Symbol) -> u8 { ... }  [458:463]
     └── walker.rs  [rust]
-        ├── pub struct SourceFile { ... }
-        ├── pub fn walk_all(root: &Path, exclude: Option<&Path>) -> Vec<PathBuf> { ... }
-        └── pub fn walk(root: &Path, languages: &[Language]) -> Vec<SourceFile> { ... }
+        ├── pub struct SourceFile { ... }  [6:10]
+        ├── pub fn walk_all(root: &Path, exclude: Option<&Path>) -> Vec<PathBuf> { ... }  [14:24]
+        └── pub fn walk(root: &Path, languages: &[Language]) -> Vec<SourceFile> { ... }  [28:42]

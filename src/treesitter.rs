@@ -13,9 +13,12 @@ struct LangRules {
     /// (container_kind, child_kind, SymbolKind): symbols to extract from
     /// inside a matching container (impl body, class body, enum variants, …)
     nested: &'static [(&'static str, &'static str, SymbolKind)],
-    /// Node kinds that represent a declaration body — everything from this
-    /// node's start byte onward is replaced with `{ ... }` in the signature.
+    /// Node kinds whose first body child causes everything after it to be
+    /// replaced with `{ ... }` in the signature.
     body_kinds: &'static [&'static str],
+    /// Node kinds that have a tree-sitter `"value"` named field (right-hand
+    /// side of `=`). The value is replaced with `= ...` instead of `{ ... }`.
+    value_kinds: &'static [&'static str],
 }
 
 // --- Rust ---
@@ -48,6 +51,8 @@ const RUST_BODY: &[&str] = &[
     "enum_variant_list",
     "declaration_list",
 ];
+// const_item and static_item carry their value in a "value" named field.
+const RUST_VALUE: &[&str] = &["const_item", "static_item", "type_item"];
 
 // --- Python ---
 const PYTHON_TOP: &[(&str, SymbolKind)] = &[
@@ -62,6 +67,7 @@ const PYTHON_NESTED: &[(&str, &str, SymbolKind)] = &[
     ("class_definition", "decorated_definition", SymbolKind::Method),
 ];
 const PYTHON_BODY: &[&str] = &["block"];
+const PYTHON_VALUE: &[&str] = &[];
 
 // --- Go ---
 const GO_TOP: &[(&str, SymbolKind)] = &[
@@ -73,6 +79,8 @@ const GO_TOP: &[(&str, SymbolKind)] = &[
 ];
 const GO_NESTED: &[(&str, &str, SymbolKind)] = &[];
 const GO_BODY: &[&str] = &["block"];
+// Go var/const declarations can have initializer expressions
+const GO_VALUE: &[&str] = &["var_spec", "const_spec"];
 
 // --- C / C++ ---
 const C_TOP: &[(&str, SymbolKind)] = &[
@@ -86,6 +94,7 @@ const C_TOP: &[(&str, SymbolKind)] = &[
 ];
 const C_NESTED: &[(&str, &str, SymbolKind)] = &[];
 const C_BODY: &[&str] = &["compound_statement", "field_declaration_list", "enumerator_list"];
+const C_VALUE: &[&str] = &[];
 
 // --- JavaScript ---
 const JS_TOP: &[(&str, SymbolKind)] = &[
@@ -100,6 +109,7 @@ const JS_NESTED: &[(&str, &str, SymbolKind)] = &[
     ("class_declaration", "method_definition", SymbolKind::Method),
 ];
 const JS_BODY: &[&str] = &["statement_block", "class_body"];
+const JS_VALUE: &[&str] = &[];
 
 // --- TypeScript ---
 const TS_TOP: &[(&str, SymbolKind)] = &[
@@ -120,6 +130,8 @@ const TS_NESTED: &[(&str, &str, SymbolKind)] = &[
     ("enum_declaration", "enum_member", SymbolKind::Variant),
 ];
 const TS_BODY: &[&str] = &["statement_block", "class_body", "object_type", "enum_body"];
+// TypeScript type aliases: `type Foo = Bar` — value is the aliased type
+const TS_VALUE: &[&str] = &["type_alias_declaration"];
 
 // --- C# ---
 const CS_TOP: &[(&str, SymbolKind)] = &[
@@ -154,6 +166,7 @@ const CS_BODY: &[&str] = &[
     "enum_member_declaration_list",
     "accessor_list",
 ];
+const CS_VALUE: &[&str] = &[];
 
 fn lang_rules(lang_name: &str) -> Option<LangRules> {
     match lang_name {
@@ -161,36 +174,43 @@ fn lang_rules(lang_name: &str) -> Option<LangRules> {
             top_level: RUST_TOP,
             nested: RUST_NESTED,
             body_kinds: RUST_BODY,
+            value_kinds: RUST_VALUE,
         }),
         "python" => Some(LangRules {
             top_level: PYTHON_TOP,
             nested: PYTHON_NESTED,
             body_kinds: PYTHON_BODY,
+            value_kinds: PYTHON_VALUE,
         }),
         "go" => Some(LangRules {
             top_level: GO_TOP,
             nested: GO_NESTED,
             body_kinds: GO_BODY,
+            value_kinds: GO_VALUE,
         }),
         "c" | "cpp" => Some(LangRules {
             top_level: C_TOP,
             nested: C_NESTED,
             body_kinds: C_BODY,
+            value_kinds: C_VALUE,
         }),
         "javascript" => Some(LangRules {
             top_level: JS_TOP,
             nested: JS_NESTED,
             body_kinds: JS_BODY,
+            value_kinds: JS_VALUE,
         }),
         "typescript" => Some(LangRules {
             top_level: TS_TOP,
             nested: TS_NESTED,
             body_kinds: TS_BODY,
+            value_kinds: TS_VALUE,
         }),
         "c_sharp" => Some(LangRules {
             top_level: CS_TOP,
             nested: CS_NESTED,
             body_kinds: CS_BODY,
+            value_kinds: CS_VALUE,
         }),
         _ => None,
     }
@@ -251,9 +271,11 @@ fn collect_top_level(root: Node, source: &[u8], rules: &LangRules) -> Vec<Symbol
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if let Some(&(_, kind)) = rules.top_level.iter().find(|(k, _)| *k == child.kind()) {
+            let line_start = child.start_position().row as u32 + 1;
+            let line_end = child.end_position().row as u32 + 1;
             let children = collect_nested(child, source, child.kind(), rules);
-            let signature = extract_signature(child, source, rules.body_kinds);
-            result.push(Symbol { kind, signature, children });
+            let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
+            result.push(Symbol { kind, signature, line_start, line_end, children });
         }
     }
     result
@@ -278,7 +300,7 @@ fn collect_nested(
         return Vec::new();
     }
 
-    find_in_subtree(node, source, &targets, rules.body_kinds, 0)
+    find_in_subtree(node, source, &targets, rules, 0)
 }
 
 /// Recursively walks `node`'s children looking for nodes whose kind appears in
@@ -288,7 +310,7 @@ fn find_in_subtree(
     node: Node,
     source: &[u8],
     targets: &[(&str, SymbolKind)],
-    body_kinds: &[&str],
+    rules: &LangRules,
     depth: u8,
 ) -> Vec<Symbol> {
     if depth > 8 {
@@ -298,20 +320,43 @@ fn find_in_subtree(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if let Some(&(_, kind)) = targets.iter().find(|(k, _)| *k == child.kind()) {
-            let signature = extract_signature(child, source, body_kinds);
-            result.push(Symbol { kind, signature, children: Vec::new() });
+            let line_start = child.start_position().row as u32 + 1;
+            let line_end = child.end_position().row as u32 + 1;
+            let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
+            result.push(Symbol { kind, signature, line_start, line_end, children: Vec::new() });
         } else {
-            result.extend(find_in_subtree(child, source, targets, body_kinds, depth + 1));
+            result.extend(find_in_subtree(child, source, targets, rules, depth + 1));
         }
     }
     result
 }
 
-/// Returns a signature string for `node`: the text up to (but not including)
-/// the first body child, with the body replaced by `{ ... }`. If no body
-/// child is found the full node text is returned. Whitespace is normalised to
-/// single spaces.
-fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str]) -> String {
+/// Returns a clean signature string for `node`:
+///
+/// - If the node kind is in `value_kinds`, the tree-sitter `"value"` named
+///   field is located via `child_by_field_name` and everything from the `=`
+///   onward is replaced with `= ...`  (e.g. `const X: u32 = ...`).
+/// - Otherwise the first child whose kind is in `body_kinds` is found and
+///   everything from it onward is replaced with `{ ... }`.
+/// - If neither applies the full node text is returned.
+///
+/// All whitespace is normalised to single spaces.
+fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str], value_kinds: &[&str]) -> String {
+    // Value-terminated declarations (const, static, type alias, …)
+    if value_kinds.contains(&node.kind()) {
+        if let Some(value_node) = node.child_by_field_name("value") {
+            let before = &source[node.start_byte()..value_node.start_byte()];
+            let decl = std::str::from_utf8(before)
+                .unwrap_or("")
+                .trim_end()
+                .trim_end_matches('=')
+                .trim_end();
+            return format!("{} = ...", normalize(decl));
+        }
+        // "value" field not found — fall through to body / full-text path
+    }
+
+    // Body-terminated declarations (fn, struct, enum, impl, …)
     for i in 0..node.child_count() {
         let child = node.child(i as u32).unwrap();
         if body_kinds.contains(&child.kind()) {
@@ -320,8 +365,8 @@ fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str]) -> String {
             return format!("{} {{ ... }}", normalize(text));
         }
     }
-    let text = node.utf8_text(source).unwrap_or("");
-    normalize(text)
+
+    normalize(node.utf8_text(source).unwrap_or(""))
 }
 
 fn normalize(s: &str) -> String {
@@ -348,11 +393,10 @@ fn extract_markdown(file: &SourceFile, source: &[u8]) -> Result<FileIndex> {
 }
 
 /// Scans `text` line-by-line for ATX headings (`# …` through `###### …`).
-/// Returns a flat list of `(level, heading_text)` in document order.
-fn scan_headings(text: &str) -> Vec<(u8, String)> {
+/// Returns a flat list of `(level, heading_text, line_number)` in document order.
+fn scan_headings(text: &str) -> Vec<(u8, String, u32)> {
     let mut result = Vec::new();
-    for line in text.lines() {
-        // Count leading `#` characters.
+    for (idx, line) in text.lines().enumerate() {
         let hashes = line.chars().take_while(|&c| c == '#').count();
         if hashes == 0 || hashes > 6 {
             continue;
@@ -363,7 +407,7 @@ fn scan_headings(text: &str) -> Vec<(u8, String)> {
             continue;
         }
         let heading_text = rest.trim().trim_end_matches('#').trim().to_string();
-        result.push((hashes as u8, heading_text));
+        result.push((hashes as u8, heading_text, idx as u32 + 1));
     }
     result
 }
@@ -371,14 +415,16 @@ fn scan_headings(text: &str) -> Vec<(u8, String)> {
 /// Converts a flat, ordered list of `(level, text)` heading pairs into a
 /// nested Symbol tree where deeper headings become children of the nearest
 /// shallower heading above them.
-fn build_heading_tree(headings: Vec<(u8, String)>) -> Vec<Symbol> {
+fn build_heading_tree(headings: Vec<(u8, String, u32)>) -> Vec<Symbol> {
     let mut stack: Vec<Symbol> = Vec::new();
     let mut result: Vec<Symbol> = Vec::new();
 
-    for (level, text) in headings {
+    for (level, text, line) in headings {
         let sym = Symbol {
             kind: SymbolKind::Heading(level),
             signature: format!("{} {}", "#".repeat(level as usize), text),
+            line_start: line,
+            line_end: line,
             children: Vec::new(),
         };
 

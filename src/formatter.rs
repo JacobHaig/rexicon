@@ -145,7 +145,15 @@ fn render_symbols(symbols: &[Symbol], prefix: &str, out: &mut String) {
         let connector = if is_last { "└── " } else { "├── " };
         let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
 
-        out.push_str(&format!("{}{}{}\n", prefix, connector, sym.signature));
+        let line_tag = if sym.line_start == sym.line_end {
+            format!("[{}]", sym.line_start)
+        } else {
+            format!("[{}:{}]", sym.line_start, sym.line_end)
+        };
+        out.push_str(&format!(
+            "{}{}{}  {}\n",
+            prefix, connector, sym.signature, line_tag
+        ));
 
         if !sym.children.is_empty() {
             render_symbols(&sym.children, &child_prefix, out);

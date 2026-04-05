@@ -23,6 +23,9 @@ pub struct Symbol {
     pub kind: SymbolKind,
     /// Full signature with bodies replaced by `{ ... }`
     pub signature: String,
+    /// 1-indexed start and end line numbers of the declaration
+    pub line_start: u32,
+    pub line_end: u32,
     /// Nested items: enum variants, impl/trait methods, class members
     pub children: Vec<Symbol>,
 }
