@@ -16,22 +16,36 @@ use std::path::PathBuf;
     about = "Index a codebase into a single structured text file for LLM navigation"
 )]
 struct Args {
-    /// Root directory of the project to index
+    /// Root directory of the project to index (defaults to current directory)
+    #[arg(default_value = ".")]
     target: PathBuf,
 
     /// Path for the output file (default: <target>/rexicon.txt)
     #[arg(long, short)]
     output: Option<PathBuf>,
+
+    /// Include files that would normally be excluded by .gitignore (e.g. target/, node_modules/)
+    #[arg(long)]
+    no_ignore: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let root = args.target.canonicalize()?;
-    let output_path = args
-        .output
-        .unwrap_or_else(|| root.join("rexicon.txt"))
-        .canonicalize()
-        .unwrap_or_else(|_| root.join("rexicon.txt"));
+    let output_path = match args.output {
+        Some(p) => {
+            // Resolve relative to cwd; the file may not exist yet so we
+            // canonicalize the parent and append the filename.
+            let p = if p.is_absolute() {
+                p
+            } else {
+                std::env::current_dir()?.join(p)
+            };
+            let parent = p.parent().unwrap_or(&p).canonicalize()?;
+            parent.join(p.file_name().unwrap_or_default())
+        }
+        None => root.join("rexicon.txt"),
+    };
 
     // Compute the output path relative to root so we can exclude it from the
     // file tree (only relevant when output lives inside the project directory).
@@ -39,8 +53,8 @@ fn main() -> Result<()> {
 
     let languages = registry::built_in_languages();
 
-    let all_files = walker::walk_all(&root, output_rel.as_deref());
-    let source_files = walker::walk(&root, &languages);
+    let all_files = walker::walk_all(&root, output_rel.as_deref(), args.no_ignore);
+    let source_files = walker::walk(&root, &languages, args.no_ignore);
 
     // Extract symbols in parallel; failed files are skipped with a warning.
     let mut indices: Vec<symbol::FileIndex> = source_files
