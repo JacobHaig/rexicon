@@ -54,6 +54,17 @@ my-project/
 - **Output is deterministic** — files processed in parallel, sorted by path before writing.
 - **The output file itself** (`rexicon.txt`) is excluded from its own tree.
 
+## Releasing
+
+To publish a new release and build binaries for all platforms:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release CI will trigger automatically on any `v*` tag, build binaries for Linux x86-64, macOS x86-64, macOS ARM, and Windows x86-64, and upload them to a GitHub Release.
+
 ## Supported languages
 
 | Language | Extensions |
