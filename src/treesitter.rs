@@ -393,10 +393,34 @@ fn extract_markdown(file: &SourceFile, source: &[u8]) -> Result<FileIndex> {
 }
 
 /// Scans `text` line-by-line for ATX headings (`# …` through `###### …`).
+/// Lines inside fenced code blocks (``` or ~~~) are skipped so that shell
+/// comments and other `#`-prefixed content in examples are not captured.
 /// Returns a flat list of `(level, heading_text, line_number)` in document order.
 fn scan_headings(text: &str) -> Vec<(u8, String, u32)> {
     let mut result = Vec::new();
+    let mut in_fence = false;
+    let mut fence_char = ' ';
+
     for (idx, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+
+        // Detect opening/closing of fenced code blocks.
+        let is_fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
+        if is_fence {
+            let ch = trimmed.chars().next().unwrap();
+            if in_fence && ch == fence_char {
+                in_fence = false;
+            } else if !in_fence {
+                in_fence = true;
+                fence_char = ch;
+            }
+            continue;
+        }
+
+        if in_fence {
+            continue;
+        }
+
         let hashes = line.chars().take_while(|&c| c == '#').count();
         if hashes == 0 || hashes > 6 {
             continue;
