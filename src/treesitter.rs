@@ -408,6 +408,7 @@ fn find_in_subtree(
             let line_start = child.start_position().row as u32 + 1;
             let line_end = child.end_position().row as u32 + 1;
             let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
+
             result.push(Symbol {
                 kind,
                 signature,
@@ -440,6 +441,7 @@ fn extract_signature(
 ) -> String {
     // Value-terminated declarations (const, static, type alias, …)
 
+    #[allow(clippy::collapsible_if)]
     if value_kinds.contains(&node.kind()) {
         if let Some(value_node) = node.child_by_field_name("value") {
             let before = &source[node.start_byte()..value_node.start_byte()];
