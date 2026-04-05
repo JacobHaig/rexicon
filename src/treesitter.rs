@@ -1,6 +1,6 @@
 use crate::symbol::{FileIndex, Symbol, SymbolKind};
 use crate::walker::SourceFile;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -62,9 +62,21 @@ const PYTHON_TOP: &[(&str, SymbolKind)] = &[
     ("decorated_definition", SymbolKind::Function),
 ];
 const PYTHON_NESTED: &[(&str, &str, SymbolKind)] = &[
-    ("class_definition", "function_definition", SymbolKind::Method),
-    ("class_definition", "async_function_definition", SymbolKind::Method),
-    ("class_definition", "decorated_definition", SymbolKind::Method),
+    (
+        "class_definition",
+        "function_definition",
+        SymbolKind::Method,
+    ),
+    (
+        "class_definition",
+        "async_function_definition",
+        SymbolKind::Method,
+    ),
+    (
+        "class_definition",
+        "decorated_definition",
+        SymbolKind::Method,
+    ),
 ];
 const PYTHON_BODY: &[&str] = &["block"];
 const PYTHON_VALUE: &[&str] = &[];
@@ -93,7 +105,11 @@ const C_TOP: &[(&str, SymbolKind)] = &[
     ("preproc_function_def", SymbolKind::Macro),
 ];
 const C_NESTED: &[(&str, &str, SymbolKind)] = &[];
-const C_BODY: &[&str] = &["compound_statement", "field_declaration_list", "enumerator_list"];
+const C_BODY: &[&str] = &[
+    "compound_statement",
+    "field_declaration_list",
+    "enumerator_list",
+];
 const C_VALUE: &[&str] = &[];
 
 // --- JavaScript ---
@@ -105,9 +121,8 @@ const JS_TOP: &[(&str, SymbolKind)] = &[
     ("variable_declaration", SymbolKind::Constant),
     ("export_statement", SymbolKind::Function),
 ];
-const JS_NESTED: &[(&str, &str, SymbolKind)] = &[
-    ("class_declaration", "method_definition", SymbolKind::Method),
-];
+const JS_NESTED: &[(&str, &str, SymbolKind)] =
+    &[("class_declaration", "method_definition", SymbolKind::Method)];
 const JS_BODY: &[&str] = &["statement_block", "class_body"];
 const JS_VALUE: &[&str] = &[];
 
@@ -124,9 +139,21 @@ const TS_TOP: &[(&str, SymbolKind)] = &[
 ];
 const TS_NESTED: &[(&str, &str, SymbolKind)] = &[
     ("class_declaration", "method_definition", SymbolKind::Method),
-    ("abstract_class_declaration", "method_definition", SymbolKind::Method),
-    ("interface_declaration", "method_signature", SymbolKind::Method),
-    ("interface_declaration", "property_signature", SymbolKind::Constant),
+    (
+        "abstract_class_declaration",
+        "method_definition",
+        SymbolKind::Method,
+    ),
+    (
+        "interface_declaration",
+        "method_signature",
+        SymbolKind::Method,
+    ),
+    (
+        "interface_declaration",
+        "property_signature",
+        SymbolKind::Constant,
+    ),
     ("enum_declaration", "enum_member", SymbolKind::Variant),
 ];
 const TS_BODY: &[&str] = &["statement_block", "class_body", "object_type", "enum_body"];
@@ -146,19 +173,71 @@ const CS_TOP: &[(&str, SymbolKind)] = &[
     ("field_declaration", SymbolKind::Constant),
 ];
 const CS_NESTED: &[(&str, &str, SymbolKind)] = &[
-    ("namespace_declaration", "class_declaration", SymbolKind::Class),
-    ("namespace_declaration", "struct_declaration", SymbolKind::Struct),
-    ("namespace_declaration", "interface_declaration", SymbolKind::Interface),
-    ("namespace_declaration", "enum_declaration", SymbolKind::Enum),
-    ("class_declaration", "method_declaration", SymbolKind::Method),
-    ("class_declaration", "constructor_declaration", SymbolKind::Function),
-    ("class_declaration", "property_declaration", SymbolKind::Constant),
-    ("class_declaration", "field_declaration", SymbolKind::Constant),
-    ("struct_declaration", "method_declaration", SymbolKind::Method),
-    ("struct_declaration", "constructor_declaration", SymbolKind::Function),
-    ("interface_declaration", "method_declaration", SymbolKind::Method),
-    ("interface_declaration", "property_declaration", SymbolKind::Constant),
-    ("enum_declaration", "enum_member_declaration", SymbolKind::Variant),
+    (
+        "namespace_declaration",
+        "class_declaration",
+        SymbolKind::Class,
+    ),
+    (
+        "namespace_declaration",
+        "struct_declaration",
+        SymbolKind::Struct,
+    ),
+    (
+        "namespace_declaration",
+        "interface_declaration",
+        SymbolKind::Interface,
+    ),
+    (
+        "namespace_declaration",
+        "enum_declaration",
+        SymbolKind::Enum,
+    ),
+    (
+        "class_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "class_declaration",
+        "constructor_declaration",
+        SymbolKind::Function,
+    ),
+    (
+        "class_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "class_declaration",
+        "field_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "struct_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "struct_declaration",
+        "constructor_declaration",
+        SymbolKind::Function,
+    ),
+    (
+        "interface_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "interface_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "enum_declaration",
+        "enum_member_declaration",
+        SymbolKind::Variant,
+    ),
 ];
 const CS_BODY: &[&str] = &[
     "block",
@@ -244,8 +323,8 @@ pub fn extract(file: &SourceFile) -> Result<FileIndex> {
 
     let ts_lang = ts_language(lang_name)
         .ok_or_else(|| anyhow!("No tree-sitter grammar for '{}'", lang_name))?;
-    let rules = lang_rules(lang_name)
-        .ok_or_else(|| anyhow!("No extraction rules for '{}'", lang_name))?;
+    let rules =
+        lang_rules(lang_name).ok_or_else(|| anyhow!("No extraction rules for '{}'", lang_name))?;
 
     let mut parser = Parser::new();
     parser.set_language(&ts_lang)?;
@@ -275,7 +354,13 @@ fn collect_top_level(root: Node, source: &[u8], rules: &LangRules) -> Vec<Symbol
             let line_end = child.end_position().row as u32 + 1;
             let children = collect_nested(child, source, child.kind(), rules);
             let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
-            result.push(Symbol { kind, signature, line_start, line_end, children });
+            result.push(Symbol {
+                kind,
+                signature,
+                line_start,
+                line_end,
+                children,
+            });
         }
     }
     result
@@ -323,7 +408,13 @@ fn find_in_subtree(
             let line_start = child.start_position().row as u32 + 1;
             let line_end = child.end_position().row as u32 + 1;
             let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
-            result.push(Symbol { kind, signature, line_start, line_end, children: Vec::new() });
+            result.push(Symbol {
+                kind,
+                signature,
+                line_start,
+                line_end,
+                children: Vec::new(),
+            });
         } else {
             result.extend(find_in_subtree(child, source, targets, rules, depth + 1));
         }
@@ -341,8 +432,14 @@ fn find_in_subtree(
 /// - If neither applies the full node text is returned.
 ///
 /// All whitespace is normalised to single spaces.
-fn extract_signature(node: Node, source: &[u8], body_kinds: &[&str], value_kinds: &[&str]) -> String {
+fn extract_signature(
+    node: Node,
+    source: &[u8],
+    body_kinds: &[&str],
+    value_kinds: &[&str],
+) -> String {
     // Value-terminated declarations (const, static, type alias, …)
+
     if value_kinds.contains(&node.kind()) {
         if let Some(value_node) = node.child_by_field_name("value") {
             let before = &source[node.start_byte()..value_node.start_byte()];

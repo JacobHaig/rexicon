@@ -67,7 +67,11 @@ fn insert_components(
         let fi = index.get(full_path);
         let language = fi.map(|f| f.language.as_str()).unwrap_or("").to_string();
         let symbols = fi.map(|f| f.symbols.clone()).unwrap_or_default();
-        nodes.push(TreeNode::File { name, language, symbols });
+        nodes.push(TreeNode::File {
+            name,
+            language,
+            symbols,
+        });
     } else {
         // Find an existing Dir with this name or create one.
         let pos = nodes.iter().position(|n| {
@@ -91,7 +95,7 @@ fn insert_components(
 }
 
 /// Sorts nodes alphabetically by name at every level of the tree.
-fn sort_nodes(nodes: &mut Vec<TreeNode>) {
+fn sort_nodes(nodes: &mut [TreeNode]) {
     nodes.sort_by(|a, b| node_name(a).cmp(node_name(b)));
     for node in nodes.iter_mut() {
         if let TreeNode::Dir { children, .. } = node {
@@ -122,7 +126,11 @@ fn render_nodes(nodes: &[TreeNode], prefix: &str, out: &mut String) {
                 out.push_str(&format!("{}{}{}/\n", prefix, connector, name));
                 render_nodes(children, &child_prefix, out);
             }
-            TreeNode::File { name, language, symbols } => {
+            TreeNode::File {
+                name,
+                language,
+                symbols,
+            } => {
                 if language.is_empty() {
                     out.push_str(&format!("{}{}{}\n", prefix, connector, name));
                 } else {

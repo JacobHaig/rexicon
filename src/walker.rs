@@ -34,7 +34,11 @@ pub fn walk(root: &Path, languages: &[Language]) -> Vec<SourceFile> {
             let path = e.into_path();
             let language = detect_language(&path, languages)?.clone();
             let rel_path = path.strip_prefix(root).ok()?.to_owned();
-            Some(SourceFile { path, rel_path, language })
+            Some(SourceFile {
+                path,
+                rel_path,
+                language,
+            })
         })
         .collect();
     files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
