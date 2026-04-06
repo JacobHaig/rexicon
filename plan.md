@@ -1,60 +1,47 @@
-# rexicon — Feature Plan
-
-Ideas for flags and features that would improve the program's utility and flexibility. Grouped roughly by effort and impact.
+# rexicon — Feature Roadmap
 
 ---
 
-## Quick wins — flags with small scope
+## Language filtering
 
-### `--quiet` / `-q`
-Suppress the `wrote ...` stderr line. Useful when rexicon is invoked from scripts or editor integrations that don't want noise on stderr.
+Allow the user to scope symbol extraction to specific languages. Files for excluded languages still appear in the tree but have no symbols extracted beneath them.
 
-### `--no-line-numbers`
-Omit the `[start:end]` tags from symbol output. Produces cleaner, more compact output for cases where line positions aren't needed.
-
-### `--threads <n>`
-Override the rayon thread pool size. Currently uses all available cores. Useful for CI environments where you want to cap resource usage, or for benchmarking.
-```
-rexicon . --threads 4
-```
-
-
----
-
-## Filtering — control what gets included
-
-### `--lang <lang>` (repeatable)
-Only index files of the specified language(s). All other files still appear in the tree but have no symbols extracted.
 ```
 rexicon . --lang rust --lang python
 ```
 
-### `--exclude <glob>` (repeatable)
-Exclude additional path patterns on top of `.gitignore`. Useful for vendored directories that aren't gitignored, or for narrowing a large project.
-```
-rexicon . --exclude "vendor/**" --exclude "**/*.pb.go"
-```
+---
 
-### `--include <glob>` (repeatable)
-Only include files matching the given glob. The inverse of `--exclude` — useful for indexing a single subdirectory or file type without changing the root.
-```
-rexicon . --include "src/**"
-```
+## Depth limit
 
-### `--depth <n>`
-Limit directory traversal to `n` levels deep. Useful for getting a high-level overview of a large monorepo without descending into every nested package.
+Stop descending after `n` directory levels. Good for getting a high-level map of a large monorepo without going into every nested package.
+
 ```
 rexicon . --depth 3
 ```
 
 ---
 
-## Output formats — different consumers need different shapes
+## Symbol kind filtering
 
-### `--format <txt|json>` (default: `txt`)
-Emit output in an alternative format. The current box-drawing tree is ideal for LLM consumption but JSON would enable programmatic tooling (editors, CI checks, diff scripts).
+Extract (or suppress) only specific symbol kinds. Makes it easy to produce a focused view — for example, the full public API surface without private helpers or impl blocks.
 
-JSON shape (sketch):
+```
+rexicon . --kinds fn,struct,trait
+rexicon . --skip-kinds impl,variant
+```
+
+---
+
+## JSON output format
+
+Machine-readable output for programmatic tooling — editor integrations, CI checks, diff scripts.
+
+```
+rexicon . --format json
+```
+
+Sketch:
 ```json
 {
   "project": "my-project",
@@ -70,19 +57,12 @@ JSON shape (sketch):
 }
 ```
 
-### `--format plain`
-Flat list of `path:line  signature` entries, one per symbol. Easy to pipe into grep, fzf, or other text tools.
-```
-src/main.rs:5     fn main() -> Result<()>
-src/walker.rs:14  pub fn walk(root, languages, exclude, no_ignore)
-```
-
 ---
 
-## Usability
+## Stats
 
-### `--stats`
-After writing the output file, print a summary table to stderr:
+Print a per-language summary table to stderr after writing the output file.
+
 ```
 Language    Files   Symbols
 rust            6      134
@@ -92,14 +72,79 @@ markdown        2        9
 Total          11      190   (23 files in tree)
 ```
 
-### `--watch` / `-w`
-Re-run automatically whenever a source file changes, writing a fresh `rexicon.txt`. Uses OS file-system events (via the `notify` crate). Pairs well with an LLM workflow where you want the index to stay current while editing.
+---
 
+## Watch mode
+
+Re-index automatically whenever a source file changes, keeping `rexicon.txt` current without manual re-runs. Uses OS filesystem events via the `notify` crate.
+
+```
+rexicon . --watch
+```
 
 ---
 
-## Larger features
+## Config file
 
+Project-level defaults in `.rexicon.toml` so flags don't need to be repeated on every run. CLI flags take precedence over config values.
 
-### LSP layer
-Originally planned. Once the index exists, a lightweight LSP server could expose go-to-definition and hover using the symbol+line data already in `FileIndex`. Would sit on top of the existing extraction pipeline without changing it.
+```toml
+exclude = ["vendor/**", "third_party/**"]
+max_file_size = 524288
+format = "txt"
+```
+
+---
+
+## Max file size
+
+Skip files above a byte threshold. Prevents accidentally parsing generated files, minified JS, or large vendored blobs that happen not to be gitignored.
+
+```
+rexicon . --max-file-size 512000
+```
+
+---
+
+## Diff mode
+
+Compare two rexicon index files and emit a structured diff — which symbols were added, removed, or had their signatures changed. Useful for code-review summaries or automated changelog generation.
+
+```
+rexicon diff rexicon_before.txt rexicon_after.txt
+```
+
+---
+
+## Additional languages
+
+All of the following have both a published `tree-sitter-*` crate and an active LSP server.
+
+| Language | Extensions | Tree-sitter crate | LSP server |
+|---|---|---|---|
+| Ruby | `.rb` | `tree-sitter-ruby` | `ruby-lsp` |
+| Swift | `.swift` | `tree-sitter-swift` | `sourcekit-lsp` |
+| Kotlin | `.kt .kts` | `tree-sitter-kotlin` | `kotlin-language-server` |
+| Lua | `.lua` | `tree-sitter-lua` | `lua-language-server` |
+| PHP | `.php` | `tree-sitter-php` | `intelephense` |
+| Haskell | `.hs .lhs` | `tree-sitter-haskell` | `haskell-language-server` |
+| Elixir | `.ex .exs` | `tree-sitter-elixir` | `elixir-ls` |
+| Erlang | `.erl .hrl` | `tree-sitter-erlang` | `erlang-ls` |
+| Dart | `.dart` | `tree-sitter-dart` | `dart` (built-in) |
+| Scala | `.scala .sbt` | `tree-sitter-scala` | `metals` |
+| R | `.r .R` | `tree-sitter-r` | `languageserver` |
+| TOML | `.toml` | `tree-sitter-toml` | `taplo` |
+| YAML | `.yml .yaml` | `tree-sitter-yaml` | `yaml-language-server` |
+| JSON | `.json` | `tree-sitter-json` | `vscode-json-languageserver` |
+| SQL | `.sql` | `tree-sitter-sql` | `sqls` |
+| HTML | `.html .htm` | `tree-sitter-html` | `vscode-html-languageserver` |
+| CSS | `.css` | `tree-sitter-css` | `vscode-css-languageserver` |
+| Vue | `.vue` | `tree-sitter-vue` | `@vue/language-server` |
+| Svelte | `.svelte` | `tree-sitter-svelte-ng` | `svelte-language-server` |
+| OCaml | `.ml .mli` | `tree-sitter-ocaml` | `ocaml-lsp-server` |
+
+---
+
+## LSP layer
+
+A lightweight LSP server built on top of the existing extraction pipeline. Once the index exists, go-to-definition and hover can be served directly from the `FileIndex` symbol+line data without re-parsing on every request.

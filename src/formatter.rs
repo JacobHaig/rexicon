@@ -3,6 +3,28 @@ use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
 // ---------------------------------------------------------------------------
+// Plain format — one line per symbol, path:line  signature
+// ---------------------------------------------------------------------------
+
+pub fn format_plain(indices: &[FileIndex]) -> String {
+    let mut out = String::new();
+    for fi in indices {
+        let path = fi.rel_path.display().to_string();
+        write_plain_symbols(&fi.symbols, &path, &mut out);
+    }
+    out
+}
+
+fn write_plain_symbols(symbols: &[Symbol], path: &str, out: &mut String) {
+    for sym in symbols {
+        out.push_str(&format!("{}:{}\t{}\n", path, sym.line_start, sym.signature));
+        if !sym.children.is_empty() {
+            write_plain_symbols(&sym.children, path, out);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Internal tree representation
 // ---------------------------------------------------------------------------
 
