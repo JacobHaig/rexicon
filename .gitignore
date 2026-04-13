@@ -19,3 +19,6 @@ target/
 # Added by cargo
 
 /target
+
+# Cached rexicon binary downloaded by the rexicon skill on first run
+.claude/skills/rexicon/bin/
