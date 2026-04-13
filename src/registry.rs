@@ -56,9 +56,34 @@ pub fn built_in_languages() -> Vec<Language> {
             lsp_command: Some("jdtls"),
         },
         Language {
+            name: "ruby",
+            extensions: &["rb", "rake"],
+            lsp_command: Some("solargraph"),
+        },
+        Language {
+            name: "php",
+            extensions: &["php"],
+            lsp_command: Some("intelephense"),
+        },
+        Language {
+            name: "lua",
+            extensions: &["lua"],
+            lsp_command: Some("lua-language-server"),
+        },
+        Language {
             name: "zig",
             extensions: &["zig"],
             lsp_command: Some("zls"),
+        },
+        Language {
+            name: "swift",
+            extensions: &["swift"],
+            lsp_command: Some("sourcekit-lsp"),
+        },
+        Language {
+            name: "scala",
+            extensions: &["scala", "sc"],
+            lsp_command: Some("metals"),
         },
         Language {
             name: "shell",

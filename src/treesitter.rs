@@ -255,7 +255,11 @@ const JAVA_TOP: &[(&str, SymbolKind)] = &[
     ("annotation_type_declaration", SymbolKind::Interface),
 ];
 const JAVA_NESTED: &[(&str, &str, SymbolKind)] = &[
-    ("class_declaration", "method_declaration", SymbolKind::Method),
+    (
+        "class_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
     (
         "class_declaration",
         "constructor_declaration",
@@ -266,11 +270,7 @@ const JAVA_NESTED: &[(&str, &str, SymbolKind)] = &[
         "field_declaration",
         SymbolKind::Constant,
     ),
-    (
-        "class_declaration",
-        "class_declaration",
-        SymbolKind::Class,
-    ),
+    ("class_declaration", "class_declaration", SymbolKind::Class),
     (
         "interface_declaration",
         "method_declaration",
@@ -282,19 +282,201 @@ const JAVA_NESTED: &[(&str, &str, SymbolKind)] = &[
         SymbolKind::Constant,
     ),
     ("enum_declaration", "enum_constant", SymbolKind::Variant),
-    (
-        "enum_declaration",
-        "method_declaration",
-        SymbolKind::Method,
-    ),
+    ("enum_declaration", "method_declaration", SymbolKind::Method),
 ];
 const JAVA_BODY: &[&str] = &["class_body", "interface_body", "enum_body", "block"];
 const JAVA_VALUE: &[&str] = &[];
 
-// --- Shell (Bash) ---
-const SHELL_TOP: &[(&str, SymbolKind)] = &[
-    ("function_definition", SymbolKind::Function),
+// --- Ruby ---
+const RUBY_TOP: &[(&str, SymbolKind)] = &[
+    ("method", SymbolKind::Function),
+    ("singleton_method", SymbolKind::Function),
+    ("class", SymbolKind::Class),
+    ("module", SymbolKind::Module),
 ];
+const RUBY_NESTED: &[(&str, &str, SymbolKind)] = &[
+    ("class", "method", SymbolKind::Method),
+    ("class", "singleton_method", SymbolKind::Method),
+    ("module", "method", SymbolKind::Function),
+    ("module", "class", SymbolKind::Class),
+    ("module", "module", SymbolKind::Module),
+];
+const RUBY_BODY: &[&str] = &["body_statement"];
+const RUBY_VALUE: &[&str] = &[];
+
+// --- PHP ---
+const PHP_TOP: &[(&str, SymbolKind)] = &[
+    ("function_definition", SymbolKind::Function),
+    ("class_declaration", SymbolKind::Class),
+    ("interface_declaration", SymbolKind::Interface),
+    ("trait_declaration", SymbolKind::Trait),
+    ("enum_declaration", SymbolKind::Enum),
+    ("namespace_definition", SymbolKind::Module),
+];
+const PHP_NESTED: &[(&str, &str, SymbolKind)] = &[
+    (
+        "class_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "class_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "interface_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "trait_declaration",
+        "method_declaration",
+        SymbolKind::Method,
+    ),
+    ("enum_declaration", "method_declaration", SymbolKind::Method),
+    ("enum_declaration", "enum_case", SymbolKind::Variant),
+    (
+        "namespace_definition",
+        "class_declaration",
+        SymbolKind::Class,
+    ),
+    (
+        "namespace_definition",
+        "interface_declaration",
+        SymbolKind::Interface,
+    ),
+    (
+        "namespace_definition",
+        "function_definition",
+        SymbolKind::Function,
+    ),
+];
+const PHP_BODY: &[&str] = &[
+    "compound_statement",
+    "declaration_list",
+    "enum_declaration_list",
+];
+const PHP_VALUE: &[&str] = &[];
+
+// --- Lua ---
+const LUA_TOP: &[(&str, SymbolKind)] = &[
+    ("function_declaration", SymbolKind::Function),
+    ("variable_declaration", SymbolKind::Constant),
+];
+const LUA_NESTED: &[(&str, &str, SymbolKind)] = &[];
+const LUA_BODY: &[&str] = &["block"];
+const LUA_VALUE: &[&str] = &[];
+
+// --- Zig ---
+const ZIG_TOP: &[(&str, SymbolKind)] = &[
+    ("function_declaration", SymbolKind::Function),
+    ("variable_declaration", SymbolKind::Constant),
+    ("test_declaration", SymbolKind::Function),
+];
+const ZIG_NESTED: &[(&str, &str, SymbolKind)] = &[];
+const ZIG_BODY: &[&str] = &["block"];
+const ZIG_VALUE: &[&str] = &[];
+
+// --- Swift ---
+const SWIFT_TOP: &[(&str, SymbolKind)] = &[
+    ("function_declaration", SymbolKind::Function),
+    ("class_declaration", SymbolKind::Class),
+    ("struct_declaration", SymbolKind::Struct),
+    ("enum_declaration", SymbolKind::Enum),
+    ("protocol_declaration", SymbolKind::Interface),
+    ("extension_declaration", SymbolKind::Impl),
+    ("typealias_declaration", SymbolKind::TypeAlias),
+    ("property_declaration", SymbolKind::Constant),
+];
+const SWIFT_NESTED: &[(&str, &str, SymbolKind)] = &[
+    (
+        "class_declaration",
+        "function_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "class_declaration",
+        "init_declaration",
+        SymbolKind::Function,
+    ),
+    (
+        "class_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "struct_declaration",
+        "function_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "struct_declaration",
+        "init_declaration",
+        SymbolKind::Function,
+    ),
+    (
+        "struct_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "protocol_declaration",
+        "function_declaration",
+        SymbolKind::Method,
+    ),
+    (
+        "protocol_declaration",
+        "property_declaration",
+        SymbolKind::Constant,
+    ),
+    (
+        "extension_declaration",
+        "function_declaration",
+        SymbolKind::Method,
+    ),
+    ("enum_declaration", "enum_entry", SymbolKind::Variant),
+];
+const SWIFT_BODY: &[&str] = &["function_body", "class_body", "protocol_body"];
+const SWIFT_VALUE: &[&str] = &[];
+
+// --- Scala ---
+const SCALA_TOP: &[(&str, SymbolKind)] = &[
+    ("function_definition", SymbolKind::Function),
+    ("class_definition", SymbolKind::Class),
+    ("object_definition", SymbolKind::Class),
+    ("trait_definition", SymbolKind::Trait),
+    ("val_definition", SymbolKind::Constant),
+    ("var_definition", SymbolKind::Constant),
+    ("type_definition", SymbolKind::TypeAlias),
+];
+const SCALA_NESTED: &[(&str, &str, SymbolKind)] = &[
+    (
+        "class_definition",
+        "function_definition",
+        SymbolKind::Method,
+    ),
+    ("class_definition", "val_definition", SymbolKind::Constant),
+    ("class_definition", "var_definition", SymbolKind::Constant),
+    ("class_definition", "class_definition", SymbolKind::Class),
+    (
+        "object_definition",
+        "function_definition",
+        SymbolKind::Method,
+    ),
+    ("object_definition", "val_definition", SymbolKind::Constant),
+    (
+        "trait_definition",
+        "function_definition",
+        SymbolKind::Method,
+    ),
+    ("trait_definition", "val_definition", SymbolKind::Constant),
+];
+const SCALA_BODY: &[&str] = &["template_body", "block", "indented_block", "enum_body"];
+const SCALA_VALUE: &[&str] = &["val_definition", "var_definition", "type_definition"];
+
+// --- Shell (Bash) ---
+const SHELL_TOP: &[(&str, SymbolKind)] = &[("function_definition", SymbolKind::Function)];
 const SHELL_NESTED: &[(&str, &str, SymbolKind)] = &[];
 const SHELL_BODY: &[&str] = &["compound_statement"];
 const SHELL_VALUE: &[&str] = &[];
@@ -349,6 +531,42 @@ fn lang_rules(lang_name: &str) -> Option<LangRules> {
             body_kinds: JAVA_BODY,
             value_kinds: JAVA_VALUE,
         }),
+        "ruby" => Some(LangRules {
+            top_level: RUBY_TOP,
+            nested: RUBY_NESTED,
+            body_kinds: RUBY_BODY,
+            value_kinds: RUBY_VALUE,
+        }),
+        "php" => Some(LangRules {
+            top_level: PHP_TOP,
+            nested: PHP_NESTED,
+            body_kinds: PHP_BODY,
+            value_kinds: PHP_VALUE,
+        }),
+        "lua" => Some(LangRules {
+            top_level: LUA_TOP,
+            nested: LUA_NESTED,
+            body_kinds: LUA_BODY,
+            value_kinds: LUA_VALUE,
+        }),
+        "zig" => Some(LangRules {
+            top_level: ZIG_TOP,
+            nested: ZIG_NESTED,
+            body_kinds: ZIG_BODY,
+            value_kinds: ZIG_VALUE,
+        }),
+        "swift" => Some(LangRules {
+            top_level: SWIFT_TOP,
+            nested: SWIFT_NESTED,
+            body_kinds: SWIFT_BODY,
+            value_kinds: SWIFT_VALUE,
+        }),
+        "scala" => Some(LangRules {
+            top_level: SCALA_TOP,
+            nested: SCALA_NESTED,
+            body_kinds: SCALA_BODY,
+            value_kinds: SCALA_VALUE,
+        }),
         "shell" => Some(LangRules {
             top_level: SHELL_TOP,
             nested: SHELL_NESTED,
@@ -369,6 +587,12 @@ fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> {
         "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "c_sharp" => Some(tree_sitter_c_sharp::LANGUAGE.into()),
         "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "ruby" => Some(tree_sitter_ruby::LANGUAGE.into()),
+        "php" => Some(tree_sitter_php::LANGUAGE_PHP.into()),
+        "lua" => Some(tree_sitter_lua::LANGUAGE.into()),
+        "zig" => Some(tree_sitter_zig::LANGUAGE.into()),
+        "swift" => Some(tree_sitter_swift::LANGUAGE.into()),
+        "scala" => Some(tree_sitter_scala::LANGUAGE.into()),
         "shell" => Some(tree_sitter_bash::LANGUAGE.into()),
         // markdown is handled separately via line scanning, not tree-sitter
         _ => None,
@@ -381,10 +605,25 @@ fn ts_language(lang_name: &str) -> Option<tree_sitter::Language> {
 
 pub fn extract(file: &SourceFile) -> Result<FileIndex> {
     let source = std::fs::read(&file.path)?;
-    let lang_name = file.language.name;
+    extract_from_bytes(&file.rel_path, file.language.name, &source)
+}
 
+/// Pure-from-bytes extraction core. Unit-testable without touching the filesystem.
+pub fn extract_from_bytes(
+    rel_path: &std::path::Path,
+    lang_name: &str,
+    source: &[u8],
+) -> Result<FileIndex> {
     if lang_name == "markdown" {
-        return extract_markdown(file, &source);
+        let text = std::str::from_utf8(source)
+            .map_err(|e| anyhow!("Invalid UTF-8 in {}: {e}", rel_path.display()))?;
+        let flat = scan_headings(text);
+        let symbols = build_heading_tree(flat);
+        return Ok(FileIndex {
+            rel_path: rel_path.to_path_buf(),
+            language: "markdown".to_string(),
+            symbols,
+        });
     }
 
     let ts_lang = ts_language(lang_name)
@@ -395,13 +634,13 @@ pub fn extract(file: &SourceFile) -> Result<FileIndex> {
     let mut parser = Parser::new();
     parser.set_language(&ts_lang)?;
     let tree = parser
-        .parse(&source, None)
-        .ok_or_else(|| anyhow!("Failed to parse {}", file.rel_path.display()))?;
+        .parse(source, None)
+        .ok_or_else(|| anyhow!("Failed to parse {}", rel_path.display()))?;
 
-    let symbols = collect_top_level(tree.root_node(), &source, &rules);
+    let symbols = collect_top_level(tree.root_node(), source, &rules);
 
     Ok(FileIndex {
-        rel_path: file.rel_path.clone(),
+        rel_path: rel_path.to_path_buf(),
         language: lang_name.to_string(),
         symbols,
     })
@@ -470,17 +709,21 @@ fn find_in_subtree(
     let mut result = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        if !child.is_named() {
+            continue;
+        }
         if let Some(&(_, kind)) = targets.iter().find(|(k, _)| *k == child.kind()) {
             let line_start = child.start_position().row as u32 + 1;
             let line_end = child.end_position().row as u32 + 1;
             let signature = extract_signature(child, source, rules.body_kinds, rules.value_kinds);
 
+            let children = collect_nested(child, source, child.kind(), rules);
             result.push(Symbol {
                 kind,
                 signature,
                 line_start,
                 line_end,
-                children: Vec::new(),
+                children,
             });
         } else {
             result.extend(find_in_subtree(child, source, targets, rules, depth + 1));
@@ -542,20 +785,6 @@ fn normalize(s: &str) -> String {
 // Markdown: ATX heading scanner (no tree-sitter — avoids crate version
 // conflicts; ATX headings are trivially identifiable without a grammar)
 // ---------------------------------------------------------------------------
-
-fn extract_markdown(file: &SourceFile, source: &[u8]) -> Result<FileIndex> {
-    let text = std::str::from_utf8(source)
-        .map_err(|e| anyhow!("Invalid UTF-8 in {}: {e}", file.rel_path.display()))?;
-
-    let flat = scan_headings(text);
-    let symbols = build_heading_tree(flat);
-
-    Ok(FileIndex {
-        rel_path: file.rel_path.clone(),
-        language: "markdown".to_string(),
-        symbols,
-    })
-}
 
 /// Scans `text` line-by-line for ATX headings (`# …` through `###### …`).
 /// Lines inside fenced code blocks (``` or ~~~) are skipped so that shell

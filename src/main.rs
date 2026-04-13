@@ -1,14 +1,8 @@
-mod formatter;
-mod output;
-mod registry;
-mod symbol;
-mod treesitter;
-mod walker;
-
 use anyhow::Result;
 use clap::Parser;
 use globset::{Glob, GlobSetBuilder};
 use rayon::prelude::*;
+use rexicon::{formatter, output, registry, symbol, treesitter, walker};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -91,8 +85,14 @@ fn main() -> Result<()> {
     let includes = build_globset(&args.includes)?;
     let excludes = build_globset(&args.excludes)?;
 
-    let (all_files, source_files) =
-        walker::walk(&root, &languages, output_rel.as_deref(), args.no_ignore, &includes, &excludes);
+    let (all_files, source_files) = walker::walk(
+        &root,
+        &languages,
+        output_rel.as_deref(),
+        args.no_ignore,
+        &includes,
+        &excludes,
+    );
 
     // Extract symbols in parallel; failed files are skipped with a warning.
     let mut indices: Vec<symbol::FileIndex> = source_files

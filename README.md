@@ -19,6 +19,18 @@ rexicon /path/to/project
 
 # Write to a custom location
 rexicon /path/to/project --output /path/to/output.txt
+
+# Include files that .gitignore would normally exclude (e.g. target/, node_modules/)
+rexicon /path/to/project --no-ignore
+
+# Only index matching paths (repeatable)
+rexicon /path/to/project --include 'src/**' --include 'lib/**'
+
+# Skip matching paths (repeatable)
+rexicon /path/to/project --exclude 'vendor/' --exclude '**/generated/**'
+
+# Flat "path:line  signature" output instead of the box-drawing tree
+rexicon /path/to/project --format plain
 ```
 
 ## Output format
@@ -74,10 +86,33 @@ The release CI will trigger automatically on any `v*` tag, build binaries for Li
 | Go | `.go` |
 | C | `.c`, `.h` |
 | C++ | `.cpp`, `.cc`, `.cxx`, `.hpp` |
-| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` |
-| TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` |
+| JavaScript | `.js`, `.jsx`, `.mjs` |
+| TypeScript | `.ts`, `.tsx`, `.mts` |
 | C# | `.cs` |
+| Java | `.java` |
+| Ruby | `.rb`, `.rake` |
+| PHP | `.php` |
+| Lua | `.lua` |
 | Zig | `.zig` |
+| Swift | `.swift` |
+| Scala | `.scala`, `.sc` |
+| Shell | `.sh`, `.bash` |
 | Markdown | `.md`, `.mdx` |
 
-Symbol extraction uses **tree-sitter** parse trees. No regex is used anywhere. Hidden files and anything matched by `.gitignore` are excluded.
+Symbol extraction uses **tree-sitter** parse trees for every language except
+Markdown, which uses a lightweight ATX heading scanner. No regex is used
+anywhere. Hidden files and anything matched by `.gitignore` are excluded by
+default — pass `--no-ignore` to include them.
+
+## Development
+
+```bash
+cargo build                        # debug build
+cargo build --release              # release build
+cargo test                         # run the full integration test suite (tests/languages.rs)
+cargo clippy --all-targets -- -D warnings
+cargo fmt
+```
+
+Tests cover every supported language plus regression cases for nested-symbol
+extraction. Add a `#[test]` in `tests/languages.rs` when adding a language.
