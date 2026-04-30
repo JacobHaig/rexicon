@@ -3,7 +3,7 @@ use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
-fn now() -> String {
+fn timestamp() -> String {
     Utc::now().to_rfc3339()
 }
 
@@ -31,7 +31,7 @@ pub fn upsert_project(
     root_path: &str,
     head_commit: Option<&str>,
 ) -> Result<i64> {
-    let ts = now();
+    let ts = timestamp();
     conn.execute(
         "INSERT INTO projects (name, root_path, head_commit, last_indexed, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -80,7 +80,7 @@ pub fn update_project_architecture(
 ) -> Result<()> {
     conn.execute(
         "UPDATE projects SET architecture = ?1, updated_at = ?2 WHERE id = ?3",
-        params![architecture, now(), project_id],
+        params![architecture, timestamp(), project_id],
     )?;
     Ok(())
 }
@@ -93,7 +93,7 @@ pub fn update_project_tech_stack(
     let json = serde_json::to_string(tech_stack)?;
     conn.execute(
         "UPDATE projects SET tech_stack = ?1, updated_at = ?2 WHERE id = ?3",
-        params![json, now(), project_id],
+        params![json, timestamp(), project_id],
     )?;
     Ok(())
 }
@@ -136,7 +136,7 @@ pub fn upsert_room(
     path: Option<&str>,
     parent_room_id: Option<i64>,
 ) -> Result<i64> {
-    let ts = now();
+    let ts = timestamp();
     conn.execute(
         "INSERT INTO rooms (project_id, name, path, parent_room_id, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -222,7 +222,7 @@ pub fn upsert_topic(
     name: &str,
     kind: &str,
 ) -> Result<i64> {
-    let ts = now();
+    let ts = timestamp();
     conn.execute(
         "INSERT INTO topics (room_id, name, kind, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
@@ -297,7 +297,7 @@ pub fn insert_symbol(
     conn.execute(
         "INSERT INTO symbols (project_id, kind, signature, name, file_path, line_start, line_end, parent_symbol_id, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        params![project_id, kind, signature, name, file_path, line_start, line_end, parent_symbol_id, now()],
+        params![project_id, kind, signature, name, file_path, line_start, line_end, parent_symbol_id, timestamp()],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -397,7 +397,7 @@ pub fn upsert_file_hash(
     file_hash: &str,
     language: Option<&str>,
 ) -> Result<()> {
-    let ts = now();
+    let ts = timestamp();
     conn.execute(
         "INSERT INTO file_index (project_id, file_path, file_hash, language, indexed_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
@@ -452,7 +452,7 @@ pub fn insert_relationship(
            target_file = excluded.target_file,
            source_line = excluded.source_line,
            metadata = excluded.metadata",
-        params![project_id, source_file, target, target_file, kind, source_line, metadata, now()],
+        params![project_id, source_file, target, target_file, kind, source_line, metadata, timestamp()],
     )?;
     Ok(())
 }
@@ -520,7 +520,7 @@ pub struct MemoryScope {
 }
 
 pub fn upsert_memory_scope(conn: &Connection, project_id: i64, name: &str) -> Result<i64> {
-    let ts = now();
+    let ts = timestamp();
     conn.execute(
         "INSERT INTO memory_scopes (project_id, name, created_at)
          VALUES (?1, ?2, ?3)
@@ -609,7 +609,7 @@ pub fn insert_memory(
     tags: Option<&[String]>,
     author: &str,
 ) -> Result<i64> {
-    let ts = now();
+    let ts = timestamp();
     let tags_json = tags.map(|t| serde_json::to_string(t).unwrap_or_default());
     conn.execute(
         "INSERT INTO memory (scope_id, title, body, tags, author, created_at, updated_at)
@@ -641,7 +641,7 @@ pub fn get_memory_by_id(conn: &Connection, id: i64) -> Result<Option<Memory>> {
 }
 
 pub fn update_memory(conn: &Connection, id: i64, title: Option<&str>, body: Option<&str>, tags: Option<&[String]>) -> Result<()> {
-    let ts = now();
+    let ts = timestamp();
     if let Some(t) = title {
         conn.execute("UPDATE memory SET title = ?1, updated_at = ?2 WHERE id = ?3", params![t, &ts, id])?;
     }
@@ -665,7 +665,7 @@ pub fn flag_stale_memory(conn: &Connection, project_id: i64) -> Result<u64> {
         "UPDATE memory SET stale = 1, updated_at = ?1
          WHERE scope_id IN (SELECT id FROM memory_scopes WHERE project_id = ?2)
          AND stale = 0",
-        params![now(), project_id],
+        params![timestamp(), project_id],
     )?;
     Ok(changed as u64)
 }

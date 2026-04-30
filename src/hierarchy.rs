@@ -103,7 +103,7 @@ pub fn generate_topics(
                     | SymbolKind::Impl
             );
             if is_significant {
-                let sym_name = extract_symbol_name(&sym.signature);
+                let sym_name = parse_symbol_name(&sym.signature);
                 if !sym_name.is_empty() {
                     schema::upsert_topic(conn, room_id, &sym_name, "symbol_group")?;
                 }
@@ -140,7 +140,7 @@ pub fn room_for_file(rel_path: &str) -> String {
 /// e.g. "pub struct Config { ... }" → "Config"
 /// e.g. "fn main() -> Result<()> { ... }" → "main"
 /// e.g. "impl Config { ... }" → "Config"
-pub fn extract_symbol_name(signature: &str) -> String {
+pub fn parse_symbol_name(signature: &str) -> String {
     let tokens: Vec<&str> = signature.split_whitespace().collect();
 
     for (i, token) in tokens.iter().enumerate() {
@@ -198,7 +198,7 @@ pub fn store_symbols(
     ) -> Result<()> {
         for sym in symbols {
             let kind_str = symbol_kind_str(sym.kind);
-            let name = extract_symbol_name(&sym.signature);
+            let name = parse_symbol_name(&sym.signature);
             let id = schema::insert_symbol(
                 conn,
                 project_id,
@@ -244,13 +244,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_symbol_name() {
-        assert_eq!(extract_symbol_name("pub struct Config { ... }"), "Config");
-        assert_eq!(extract_symbol_name("fn main() -> Result<()> { ... }"), "main");
-        assert_eq!(extract_symbol_name("impl Config { ... }"), "Config");
-        assert_eq!(extract_symbol_name("pub fn walk(root: &Path) { ... }"), "walk");
-        assert_eq!(extract_symbol_name("class UserService { ... }"), "UserService");
-        assert_eq!(extract_symbol_name("def process_payment(amount)"), "process_payment");
+    fn test_parse_symbol_name() {
+        assert_eq!(parse_symbol_name("pub struct Config { ... }"), "Config");
+        assert_eq!(parse_symbol_name("fn main() -> Result<()> { ... }"), "main");
+        assert_eq!(parse_symbol_name("impl Config { ... }"), "Config");
+        assert_eq!(parse_symbol_name("pub fn walk(root: &Path) { ... }"), "walk");
+        assert_eq!(parse_symbol_name("class UserService { ... }"), "UserService");
+        assert_eq!(parse_symbol_name("def process_payment(amount)"), "process_payment");
     }
 
     #[test]

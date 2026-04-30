@@ -13,7 +13,7 @@ struct RawRef {
     line: u32,
 }
 
-pub fn extract_and_store(
+pub fn index_relationships(
     conn: &Connection,
     project_id: i64,
     root: &Path,
@@ -37,8 +37,8 @@ pub fn extract_and_store(
             Ok(b) => b,
             Err(_) => continue,
         };
-        let refs = extract_refs(sf.language.name, &source, &rel_path);
-        count += store_refs(conn, project_id, &rel_path, &refs, &file_set)?;
+        let refs = parse_imports(sf.language.name, &source, &rel_path);
+        count += save_relationships(conn, project_id, &rel_path, &refs, &file_set)?;
     }
 
     // Also extract from non-source files (markdown, config)
@@ -63,17 +63,17 @@ pub fn extract_and_store(
             };
 
             let refs = match ext {
-                "md" | "mdx" => extract_markdown_refs(&source),
-                "toml" => extract_toml_refs(&source, &rel),
-                "json" => extract_json_refs(&source, &rel),
-                "yaml" | "yml" => extract_yaml_refs(&source, &rel),
-                _ if filename.starts_with("Dockerfile") => extract_dockerfile_refs(&source),
-                _ if filename.contains("akefile") => extract_makefile_refs(&source),
+                "md" | "mdx" => parse_markdown_links(&source),
+                "toml" => parse_toml_paths(&source, &rel),
+                "json" => parse_json_paths(&source, &rel),
+                "yaml" | "yml" => parse_yaml_paths(&source, &rel),
+                _ if filename.starts_with("Dockerfile") => parse_dockerfile_paths(&source),
+                _ if filename.contains("akefile") => parse_makefile_includes(&source),
                 _ => vec![],
             };
 
             if !refs.is_empty() {
-                count += store_refs(conn, project_id, &rel, &refs, &file_set)?;
+                count += save_relationships(conn, project_id, &rel, &refs, &file_set)?;
             }
         }
     }
@@ -81,7 +81,7 @@ pub fn extract_and_store(
     Ok(count)
 }
 
-fn store_refs(
+fn save_relationships(
     conn: &Connection,
     project_id: i64,
     rel_path: &str,
@@ -91,7 +91,7 @@ fn store_refs(
     schema::delete_relationships_for_file(conn, project_id, rel_path)?;
     let mut count = 0u64;
     for r in refs {
-        let resolved = resolve_target(&r.target, r.kind, rel_path, file_set);
+        let resolved = match_target_file(&r.target, r.kind, rel_path, file_set);
         schema::insert_relationship(
             conn,
             project_id,
@@ -107,32 +107,32 @@ fn store_refs(
     Ok(count)
 }
 
-fn extract_refs(lang: &str, source: &[u8], rel_path: &str) -> Vec<RawRef> {
+fn parse_imports(lang: &str, source: &[u8], rel_path: &str) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
     };
 
     let mut refs = match lang {
-        "rust" => extract_rust_imports(text),
-        "python" => extract_python_imports(text),
-        "javascript" | "typescript" => extract_js_ts_imports(text),
-        "go" => extract_go_imports(text),
-        "java" => extract_java_imports(text),
-        "c" | "cpp" => extract_c_includes(text),
-        "ruby" => extract_ruby_requires(text),
-        "php" => extract_php_imports(text),
-        "c_sharp" => extract_csharp_usings(text),
-        "swift" => extract_swift_imports(text),
-        "scala" => extract_scala_imports(text),
-        "lua" => extract_lua_requires(text),
-        "zig" => extract_zig_imports(text),
-        "shell" => extract_shell_sources(text),
-        "markdown" => extract_markdown_refs(source),
+        "rust" => parse_rust_imports(text),
+        "python" => parse_python_imports(text),
+        "javascript" | "typescript" => parse_js_ts_imports(text),
+        "go" => parse_go_imports(text),
+        "java" => parse_java_imports(text),
+        "c" | "cpp" => parse_c_includes(text),
+        "ruby" => parse_ruby_requires(text),
+        "php" => parse_php_imports(text),
+        "c_sharp" => parse_csharp_usings(text),
+        "swift" => parse_swift_imports(text),
+        "scala" => parse_scala_imports(text),
+        "lua" => parse_lua_requires(text),
+        "zig" => parse_zig_imports(text),
+        "shell" => parse_shell_sources(text),
+        "markdown" => parse_markdown_links(source),
         _ => vec![],
     };
     // Extract backtick code references from any file with inline code spans
-    refs.extend(extract_backtick_refs(text, rel_path));
+    refs.extend(parse_backtick_references(text, rel_path));
     refs
 }
 
@@ -140,7 +140,7 @@ fn extract_refs(lang: &str, source: &[u8], rel_path: &str) -> Vec<RawRef> {
 // Language-specific import extractors
 // ---------------------------------------------------------------------------
 
-fn extract_rust_imports(text: &str) -> Vec<RawRef> {
+fn parse_rust_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -201,7 +201,7 @@ fn extract_rust_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_python_imports(text: &str) -> Vec<RawRef> {
+fn parse_python_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -231,12 +231,12 @@ fn extract_python_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_js_ts_imports(text: &str) -> Vec<RawRef> {
+fn parse_js_ts_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if (trimmed.starts_with("import ") || trimmed.starts_with("export "))
-            && let Some(path) = extract_quoted_after(trimmed, "from")
+            && let Some(path) = parse_quoted_after_keyword(trimmed, "from")
         {
             refs.push(RawRef {
                 target: path,
@@ -247,7 +247,7 @@ fn extract_js_ts_imports(text: &str) -> Vec<RawRef> {
         // const x = require('...')
         if let Some(start) = trimmed.find("require(") {
             let rest = &trimmed[start + 8..];
-            if let Some(path) = extract_first_quoted(rest) {
+            if let Some(path) = parse_first_quoted(rest) {
                 refs.push(RawRef {
                     target: path,
                     kind: "imports",
@@ -259,7 +259,7 @@ fn extract_js_ts_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_go_imports(text: &str) -> Vec<RawRef> {
+fn parse_go_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     let mut in_import_block = false;
     for (i, line) in text.lines().enumerate() {
@@ -273,7 +273,7 @@ fn extract_go_imports(text: &str) -> Vec<RawRef> {
             continue;
         }
         if in_import_block
-            && let Some(path) = extract_first_quoted(trimmed)
+            && let Some(path) = parse_first_quoted(trimmed)
         {
             refs.push(RawRef {
                 target: path,
@@ -281,7 +281,7 @@ fn extract_go_imports(text: &str) -> Vec<RawRef> {
                 line: (i + 1) as u32,
             });
         } else if let Some(rest) = trimmed.strip_prefix("import ")
-            && let Some(path) = extract_first_quoted(rest)
+            && let Some(path) = parse_first_quoted(rest)
         {
             refs.push(RawRef {
                 target: path,
@@ -293,7 +293,7 @@ fn extract_go_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_java_imports(text: &str) -> Vec<RawRef> {
+fn parse_java_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -311,14 +311,14 @@ fn extract_java_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_c_includes(text: &str) -> Vec<RawRef> {
+fn parse_c_includes(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("#include") {
             let rest = rest.trim();
             if rest.starts_with('"')
-                && let Some(path) = extract_first_quoted(rest)
+                && let Some(path) = parse_first_quoted(rest)
             {
                 refs.push(RawRef {
                     target: path,
@@ -331,14 +331,14 @@ fn extract_c_includes(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_ruby_requires(text: &str) -> Vec<RawRef> {
+fn parse_ruby_requires(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         for keyword in &["require_relative", "require"] {
             if let Some(rest) = trimmed.strip_prefix(keyword) {
                 let rest = rest.trim();
-                if let Some(path) = extract_first_quoted(rest) {
+                if let Some(path) = parse_first_quoted(rest) {
                     refs.push(RawRef {
                         target: path,
                         kind: "imports",
@@ -352,7 +352,7 @@ fn extract_ruby_requires(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_php_imports(text: &str) -> Vec<RawRef> {
+fn parse_php_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -368,7 +368,7 @@ fn extract_php_imports(text: &str) -> Vec<RawRef> {
         }
         for keyword in &["require", "include", "require_once", "include_once"] {
             if trimmed.contains(keyword)
-                && let Some(path) = extract_first_quoted(trimmed)
+                && let Some(path) = parse_first_quoted(trimmed)
             {
                 refs.push(RawRef {
                     target: path,
@@ -382,11 +382,11 @@ fn extract_php_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_csharp_usings(text: &str) -> Vec<RawRef> {
-    extract_simple_imports(text, "using ")
+fn parse_csharp_usings(text: &str) -> Vec<RawRef> {
+    parse_simple_imports(text, "using ")
 }
 
-fn extract_simple_imports(text: &str, keyword: &str) -> Vec<RawRef> {
+fn parse_simple_imports(text: &str, keyword: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -404,22 +404,22 @@ fn extract_simple_imports(text: &str, keyword: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_swift_imports(text: &str) -> Vec<RawRef> {
-    extract_simple_imports(text, "import ")
+fn parse_swift_imports(text: &str) -> Vec<RawRef> {
+    parse_simple_imports(text, "import ")
 }
 
-fn extract_scala_imports(text: &str) -> Vec<RawRef> {
-    extract_simple_imports(text, "import ")
+fn parse_scala_imports(text: &str) -> Vec<RawRef> {
+    parse_simple_imports(text, "import ")
 }
 
-fn extract_lua_requires(text: &str) -> Vec<RawRef> {
+fn parse_lua_requires(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if let Some(start) = trimmed.find("require") {
             let rest = &trimmed[start + 7..];
             let rest = rest.trim().trim_start_matches('(').trim();
-            if let Some(path) = extract_first_quoted(rest) {
+            if let Some(path) = parse_first_quoted(rest) {
                 refs.push(RawRef {
                     target: path,
                     kind: "imports",
@@ -431,13 +431,13 @@ fn extract_lua_requires(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_zig_imports(text: &str) -> Vec<RawRef> {
+fn parse_zig_imports(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if let Some(start) = trimmed.find("@import(") {
             let rest = &trimmed[start + 8..];
-            if let Some(path) = extract_first_quoted(rest) {
+            if let Some(path) = parse_first_quoted(rest) {
                 refs.push(RawRef {
                     target: path,
                     kind: "imports",
@@ -449,7 +449,7 @@ fn extract_zig_imports(text: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_shell_sources(text: &str) -> Vec<RawRef> {
+fn parse_shell_sources(text: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -478,7 +478,7 @@ fn extract_shell_sources(text: &str) -> Vec<RawRef> {
 // Backtick code references (any source file)
 // ---------------------------------------------------------------------------
 
-fn extract_backtick_refs(text: &str, _rel_path: &str) -> Vec<RawRef> {
+fn parse_backtick_references(text: &str, _rel_path: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -532,7 +532,7 @@ fn extract_backtick_refs(text: &str, _rel_path: &str) -> Vec<RawRef> {
 // Markdown references
 // ---------------------------------------------------------------------------
 
-fn extract_markdown_refs(source: &[u8]) -> Vec<RawRef> {
+fn parse_markdown_links(source: &[u8]) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -570,7 +570,7 @@ fn extract_markdown_refs(source: &[u8]) -> Vec<RawRef> {
 // Config file references
 // ---------------------------------------------------------------------------
 
-fn extract_toml_refs(source: &[u8], _rel_path: &str) -> Vec<RawRef> {
+fn parse_toml_paths(source: &[u8], _rel_path: &str) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -580,7 +580,7 @@ fn extract_toml_refs(source: &[u8], _rel_path: &str) -> Vec<RawRef> {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("path") {
             let rest = rest.trim().strip_prefix('=').unwrap_or("").trim();
-            if let Some(path) = extract_first_quoted(rest) {
+            if let Some(path) = parse_first_quoted(rest) {
                 refs.push(RawRef {
                     target: path,
                     kind: "config_path",
@@ -592,7 +592,7 @@ fn extract_toml_refs(source: &[u8], _rel_path: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_json_refs(source: &[u8], rel_path: &str) -> Vec<RawRef> {
+fn parse_json_paths(source: &[u8], rel_path: &str) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -606,7 +606,7 @@ fn extract_json_refs(source: &[u8], rel_path: &str) -> Vec<RawRef> {
         for key in &["\"main\"", "\"module\"", "\"types\"", "\"typings\"", "\"bin\""] {
             let value_part = trimmed.split_once(':').map(|x| x.1).unwrap_or("");
             if trimmed.starts_with(key)
-                && let Some(path) = extract_first_quoted(value_part)
+                && let Some(path) = parse_first_quoted(value_part)
                 && (path.ends_with(".js")
                     || path.ends_with(".ts")
                     || path.ends_with(".mjs")
@@ -623,7 +623,7 @@ fn extract_json_refs(source: &[u8], rel_path: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_yaml_refs(source: &[u8], rel_path: &str) -> Vec<RawRef> {
+fn parse_yaml_paths(source: &[u8], rel_path: &str) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -679,7 +679,7 @@ fn extract_yaml_refs(source: &[u8], rel_path: &str) -> Vec<RawRef> {
     refs
 }
 
-fn extract_dockerfile_refs(source: &[u8]) -> Vec<RawRef> {
+fn parse_dockerfile_paths(source: &[u8]) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -718,7 +718,7 @@ fn extract_dockerfile_refs(source: &[u8]) -> Vec<RawRef> {
     refs
 }
 
-fn extract_makefile_refs(source: &[u8]) -> Vec<RawRef> {
+fn parse_makefile_includes(source: &[u8]) -> Vec<RawRef> {
     let text = match std::str::from_utf8(source) {
         Ok(t) => t,
         Err(_) => return vec![],
@@ -748,7 +748,7 @@ fn extract_makefile_refs(source: &[u8]) -> Vec<RawRef> {
 // Path resolution
 // ---------------------------------------------------------------------------
 
-fn resolve_target(
+fn match_target_file(
     target: &str,
     kind: &str,
     source_file: &str,
@@ -756,18 +756,18 @@ fn resolve_target(
 ) -> Option<String> {
     match kind {
         "links_to" => None,
-        "imports" => resolve_import(target, source_file, file_set),
-        "references" | "config_path" => resolve_relative_path(target, source_file, file_set),
+        "imports" => match_import_to_file(target, source_file, file_set),
+        "references" | "config_path" => match_relative_path(target, source_file, file_set),
         _ => None,
     }
 }
 
-fn resolve_import(target: &str, source_file: &str, file_set: &HashSet<String>) -> Option<String> {
+fn match_import_to_file(target: &str, source_file: &str, file_set: &HashSet<String>) -> Option<String> {
     // Rust: use crate::foo::bar → src/foo/bar.rs or src/foo.rs
     if let Some(rest) = target.strip_prefix("crate::") {
         let rest = rest.split('{').next().unwrap_or(rest).trim_end_matches(',').trim();
         let parts: Vec<&str> = rest.split("::").collect();
-        return try_rust_path(&parts, file_set);
+        return match_rust_module_path(&parts, file_set);
     }
     // Rust: use <crate_name>::{...} — try stripping the crate name and resolving as crate::
     if target.contains("::") && !target.starts_with("super::") {
@@ -776,7 +776,7 @@ fn resolve_import(target: &str, source_file: &str, file_set: &HashSet<String>) -
         let rest = rest.split('{').next().unwrap_or(rest).trim_end_matches(',').trim();
         if !rest.is_empty() {
             let parts: Vec<&str> = rest.split("::").collect();
-            if let Some(found) = try_rust_path(&parts, file_set) {
+            if let Some(found) = match_rust_module_path(&parts, file_set) {
                 return Some(found);
             }
         }
@@ -809,7 +809,7 @@ fn resolve_import(target: &str, source_file: &str, file_set: &HashSet<String>) -
 
     // JS/TS: relative paths ./foo or ../foo
     if target.starts_with("./") || target.starts_with("../") {
-        return resolve_relative_path(target, source_file, file_set);
+        return match_relative_path(target, source_file, file_set);
     }
 
     // Python: dots to slashes
@@ -848,7 +848,7 @@ fn resolve_import(target: &str, source_file: &str, file_set: &HashSet<String>) -
     None
 }
 
-fn resolve_relative_path(
+fn match_relative_path(
     target: &str,
     source_file: &str,
     file_set: &HashSet<String>,
@@ -888,7 +888,7 @@ fn resolve_relative_path(
     None
 }
 
-fn try_rust_path(parts: &[&str], file_set: &HashSet<String>) -> Option<String> {
+fn match_rust_module_path(parts: &[&str], file_set: &HashSet<String>) -> Option<String> {
     for i in (1..=parts.len()).rev() {
         let path = format!("src/{}.rs", parts[..i].join("/"));
         if file_set.contains(&path) {
@@ -920,13 +920,13 @@ fn normalize_path(path: &Path) -> PathBuf {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn extract_quoted_after(text: &str, keyword: &str) -> Option<String> {
+fn parse_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
     let idx = text.find(keyword)?;
     let rest = &text[idx + keyword.len()..];
-    extract_first_quoted(rest)
+    parse_first_quoted(rest)
 }
 
-fn extract_first_quoted(text: &str) -> Option<String> {
+fn parse_first_quoted(text: &str) -> Option<String> {
     for quote in ['"', '\''] {
         if let Some(start) = text.find(quote) {
             let after = &text[start + 1..];
