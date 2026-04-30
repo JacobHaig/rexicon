@@ -94,6 +94,11 @@ rexicon index . --exclude vendor
 rexicon index . --no-ignore
 ```
 
+Output:
+```
+indexed my-api: 342 files (5 changed, 1 removed), 1247 symbols, 68 relationships
+```
+
 Re-indexing is **incremental** — only files whose content changed since the last index are re-processed. A 10,000-file project re-indexes in under a second if only 5 files changed.
 
 ### Listing Projects
@@ -269,6 +274,63 @@ rexicon diff my-api
 #   M  src/auth/jwt.rs
 #   A  src/auth/oauth.rs
 ```
+
+### Exploring Dependencies
+
+The `graph` commands let you explore how files depend on each other. Relationships are detected automatically during indexing.
+
+```bash
+# What does this file depend on? (direct children)
+rexicon graph children <project> --file <path>
+rexicon graph c <project> --file <path>              # shorthand
+
+# What depends on this file? (direct parents)
+rexicon graph parents <project> --file <path>
+rexicon graph p <project> --file <path>              # shorthand
+
+# Full dependency tree downward
+rexicon graph tree <project> --file <path>
+rexicon graph tree <project> --file <path> --depth 3  # limit depth (default: 10)
+
+# Everything affected if this file changes (reverse tree upward)
+rexicon graph impact <project> --file <path>
+rexicon graph impact <project> --file <path> --depth 3
+```
+
+Examples:
+
+```bash
+$ rexicon graph c rexicon --file src/hierarchy.rs
+src/hierarchy.rs depends on:
+  imports      src/schema.rs
+  imports      src/symbol.rs
+
+$ rexicon graph p rexicon --file src/symbol.rs
+src/symbol.rs is depended on by:
+  imports      src/formatter.rs
+  imports      src/hierarchy.rs
+  imports      src/lib.rs
+  imports      src/main.rs
+  imports      src/treesitter.rs
+  imports      tests/languages.rs
+
+$ rexicon graph impact rexicon --file src/schema.rs
+Changing src/schema.rs affects:
+src/schema.rs
+├── src/hierarchy.rs
+│   ├── src/lib.rs
+│   └── src/main.rs
+├── src/lib.rs ← (already shown)
+├── src/main.rs ← (already shown)
+└── src/relationships.rs
+    ├── src/lib.rs ← (already shown)
+    └── src/main.rs ← (already shown)
+```
+
+Relationship types detected automatically during indexing:
+- Code imports (Rust, Python, JS/TS, Go, Java, C/C++, Ruby, PHP, C#, Swift, Scala, Lua, Zig, Shell)
+- Markdown links and backtick file references
+- Config file paths (Cargo.toml, package.json, YAML CI configs, Dockerfile, Makefile)
 
 ### Exporting
 

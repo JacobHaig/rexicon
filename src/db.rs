@@ -81,16 +81,17 @@ const MIGRATIONS: &[&str] = &[
     CREATE TABLE IF NOT EXISTS relationships (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        from_symbol INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
-        to_symbol   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+        source_file TEXT NOT NULL,
+        target      TEXT NOT NULL,
+        target_file TEXT,
         kind        TEXT NOT NULL,
-        confidence  REAL,
+        source_line INTEGER,
         metadata    TEXT,
         created_at  TEXT NOT NULL,
-        UNIQUE(from_symbol, to_symbol, kind)
+        UNIQUE(project_id, source_file, target, kind)
     );
-    CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_symbol);
-    CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_symbol);
+    CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships(project_id, source_file);
+    CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships(project_id, target_file);
 
     CREATE TABLE IF NOT EXISTS memory_scopes (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,

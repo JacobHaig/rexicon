@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use globset::{Glob, GlobSetBuilder};
 use rayon::prelude::*;
-use rexicon::{db, formatter, hierarchy, output, registry, schema, symbol, treesitter, walker};
+use rexicon::{db, formatter, hierarchy, output, registry, relationships, schema, symbol, treesitter, walker};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -144,6 +144,56 @@ enum Command {
     Diff {
         /// Project name
         project: String,
+    },
+
+    /// Query the relationship graph
+    Graph {
+        #[command(subcommand)]
+        action: GraphAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum GraphAction {
+    /// What does this file depend on (direct)
+    #[command(alias = "c")]
+    Children {
+        /// Project name
+        project: String,
+        /// File path (relative to project root)
+        #[arg(long)]
+        file: String,
+    },
+    /// What depends on this file (direct)
+    #[command(alias = "p")]
+    Parents {
+        /// Project name
+        project: String,
+        /// File path (relative to project root)
+        #[arg(long)]
+        file: String,
+    },
+    /// Full dependency tree downward
+    Tree {
+        /// Project name
+        project: String,
+        /// Root file path
+        #[arg(long)]
+        file: String,
+        /// Max depth (default: 10)
+        #[arg(long, default_value = "10")]
+        depth: usize,
+    },
+    /// Everything affected if this file changes (reverse tree)
+    Impact {
+        /// Project name
+        project: String,
+        /// File path
+        #[arg(long)]
+        file: String,
+        /// Max depth (default: 10)
+        #[arg(long, default_value = "10")]
+        depth: usize,
     },
 }
 
@@ -297,6 +347,8 @@ fn main() -> Result<()> {
         Some(Command::Memory { action }) => cmd_memory(action),
 
         Some(Command::Diff { project }) => cmd_diff(&project),
+
+        Some(Command::Graph { action }) => cmd_graph(action),
 
         None => {
             // Legacy mode: rexicon [dir] [--output ...]
@@ -538,10 +590,13 @@ fn cmd_index(
         .collect();
     hierarchy::generate_topics(&conn, project_id, &all_source_indices)?;
 
+    // Extract relationships (imports, references, config paths)
+    let rel_count = relationships::extract_and_store(&conn, project_id, &root, &source_files, &all_files)?;
+
     let total_symbols = schema::count_symbols(&conn, project_id)?;
 
     eprintln!(
-        "indexed {project_name}: {} files ({changed_count} changed, {} removed), {total_symbols} symbols{}",
+        "indexed {project_name}: {} files ({changed_count} changed, {} removed), {total_symbols} symbols, {rel_count} relationships{}",
         all_files.len(),
         removed.len(),
         if stale_count > 0 {
@@ -1213,6 +1268,81 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Graph command
+// ---------------------------------------------------------------------------
+
+fn cmd_graph(action: GraphAction) -> Result<()> {
+    let conn = db::open_default()?;
+
+    match action {
+        GraphAction::Children { project, file } => {
+            let proj = resolve_project(&conn, &project)?;
+            let rels = schema::get_children(&conn, proj.id, &file)?;
+            let mut seen = std::collections::HashSet::new();
+            let resolved_rels: Vec<_> = rels
+                .iter()
+                .filter(|r| r.target_file.is_some())
+                .filter(|r| seen.insert(r.target_file.clone()))
+                .collect();
+            if resolved_rels.is_empty() {
+                eprintln!("{file} has no children (dependencies)");
+            } else {
+                println!("{file} depends on:\n");
+                for r in &resolved_rels {
+                    let target = r.target_file.as_deref().unwrap();
+                    println!("  {:<12} {}", r.kind, target);
+                }
+            }
+        }
+        GraphAction::Parents { project, file } => {
+            let proj = resolve_project(&conn, &project)?;
+            let rels = schema::get_parents(&conn, proj.id, &file)?;
+            let mut seen = std::collections::HashSet::new();
+            let deduped: Vec<_> = rels
+                .iter()
+                .filter(|r| seen.insert(r.source_file.clone()))
+                .collect();
+            if deduped.is_empty() {
+                eprintln!("{file} has no parents (nothing depends on it)");
+            } else {
+                println!("{file} is depended on by:\n");
+                for r in &deduped {
+                    println!("  {:<12} {}", r.kind, r.source_file);
+                }
+            }
+        }
+        GraphAction::Tree {
+            project,
+            file,
+            depth,
+        } => {
+            let proj = resolve_project(&conn, &project)?;
+            let tree = relationships::traverse_tree(&conn, proj.id, &file, depth)?;
+            if tree.is_empty() {
+                eprintln!("{file} has no dependency tree");
+            } else {
+                render_tree(&tree);
+            }
+        }
+        GraphAction::Impact {
+            project,
+            file,
+            depth,
+        } => {
+            let proj = resolve_project(&conn, &project)?;
+            let tree = relationships::traverse_impact(&conn, proj.id, &file, depth)?;
+            if tree.is_empty() {
+                eprintln!("{file} has no impact tree");
+            } else {
+                println!("Changing {file} affects:\n");
+                render_tree(&tree);
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Diff command
 // ---------------------------------------------------------------------------
 
@@ -1307,6 +1437,39 @@ fn cmd_diff(project_name: &str) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn render_tree(entries: &[(usize, String, bool)]) {
+    for (idx, (depth, path, is_cycle)) in entries.iter().enumerate() {
+        if *depth == 0 {
+            println!("{path}");
+            continue;
+        }
+        let marker = if *is_cycle { " ← (already shown)" } else { "" };
+
+        // Determine if this is the last sibling at its depth
+        let is_last = entries[idx + 1..]
+            .iter()
+            .take_while(|(d, _, _)| *d >= *depth)
+            .all(|(d, _, _)| *d > *depth);
+
+        let connector = if is_last { "└── " } else { "├── " };
+
+        // Build prefix from parent levels
+        let mut prefix = String::new();
+        for d in 1..*depth {
+            let parent_has_more = entries[idx + 1..]
+                .iter()
+                .any(|(ed, _, _)| *ed == d);
+            if parent_has_more {
+                prefix.push_str("│   ");
+            } else {
+                prefix.push_str("    ");
+            }
+        }
+
+        println!("{prefix}{connector}{path}{marker}");
+    }
+}
 
 
 fn resolve_output_path(root: &std::path::Path, output: Option<&PathBuf>) -> Result<PathBuf> {

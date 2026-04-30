@@ -222,6 +222,27 @@ rexicon diff <project>
 
 Reports: changed files, added files, removed files, and any memory entries flagged stale.
 
+### Explore dependencies
+
+Relationships are extracted automatically during `rexicon index` — no manual setup needed. Covers code imports (14 languages), markdown links, backtick code references, and config file paths.
+
+```bash
+# What does this file depend on? (direct)
+rexicon graph children <project> --file <path>
+rexicon graph c <project> --file <path>              # shorthand
+
+# What depends on this file? (direct)
+rexicon graph parents <project> --file <path>
+rexicon graph p <project> --file <path>              # shorthand
+
+# Full dependency tree downward
+rexicon graph tree <project> --file <path>
+rexicon graph tree <project> --file <path> --depth 3
+
+# What breaks if I change this? (reverse tree upward)
+rexicon graph impact <project> --file <path>
+```
+
 ### Index and re-index
 
 ```bash
@@ -249,6 +270,7 @@ Write memory when you discover something that:
 | Completed a complex investigation | Summary of findings | `debugging` | `fix`, `investigation` |
 | User corrects your approach | The correct pattern | `conventions` | `convention` |
 | Notice a cross-file pattern | What the pattern is, where it applies | `architecture` | `architecture`, `pattern` |
+| Before refactoring a file | Check impact first | `debugging` | `architecture` |
 | Something would help a newcomer | Onboarding context | `onboarding` | `onboarding` |
 
 ### Memory discipline
@@ -272,7 +294,7 @@ Write memory when you discover something that:
 | "What does line 47 do?" | No | Read the source file |
 | "Where is UserService?" | Yes — `rexicon query "UserService"` | |
 | "What's in .env?" | No | Read the file (rexicon doesn't index config) |
-| "What calls this function?" | Not yet (Phase 3) | Use grep for now |
+| "What calls this function?" | File-level: `rexicon graph p <project> --file <path>` | Symbol-level: use grep |
 | "What conventions apply here?" | Yes — `rexicon memory list --project my-api --topic conventions` | |
 
 ---
@@ -297,6 +319,7 @@ rexicon index /path/to/project         # if stale
 rexicon show my-api
 rexicon query "payment webhook"
 rexicon show my-api payments
+rexicon graph impact my-api --file src/payments/webhook.rs
 -> investigate, fix the bug
 rexicon memory add --project my-api --topic "debugging" "Webhook not idempotent" "..." --tags "fix,gotcha"
 ```
@@ -310,6 +333,7 @@ rexicon index /path/to/project
 rexicon show my-api
 rexicon query "user validation"
 rexicon show my-api models
+rexicon graph c my-api --file src/models/user.rs
 -> write code
 rexicon memory add --project my-api --topic "architecture" "User email validated at service layer" "..." --tags "architecture"
 -> more code

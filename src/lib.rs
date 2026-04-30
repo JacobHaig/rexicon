@@ -3,6 +3,7 @@ pub mod formatter;
 pub mod hierarchy;
 pub mod output;
 pub mod registry;
+pub mod relationships;
 pub mod schema;
 pub mod symbol;
 pub mod treesitter;

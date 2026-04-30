@@ -419,7 +419,97 @@ pub fn delete_file_hash(conn: &Connection, project_id: i64, file_path: &str) -> 
 }
 
 // ---------------------------------------------------------------------------
-// Memory Topics
+// Relationships
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Relationship {
+    pub id: i64,
+    pub project_id: i64,
+    pub source_file: String,
+    pub target: String,
+    pub target_file: Option<String>,
+    pub kind: String,
+    pub source_line: Option<i64>,
+    pub metadata: Option<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn insert_relationship(
+    conn: &Connection,
+    project_id: i64,
+    source_file: &str,
+    target: &str,
+    target_file: Option<&str>,
+    kind: &str,
+    source_line: Option<i64>,
+    metadata: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO relationships (project_id, source_file, target, target_file, kind, source_line, metadata, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(project_id, source_file, target, kind) DO UPDATE SET
+           target_file = excluded.target_file,
+           source_line = excluded.source_line,
+           metadata = excluded.metadata",
+        params![project_id, source_file, target, target_file, kind, source_line, metadata, now()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_relationships_for_file(conn: &Connection, project_id: i64, source_file: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM relationships WHERE project_id = ?1 AND source_file = ?2",
+        params![project_id, source_file],
+    )?;
+    Ok(())
+}
+
+pub fn get_children(conn: &Connection, project_id: i64, file_path: &str) -> Result<Vec<Relationship>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, source_file, target, target_file, kind, source_line, metadata
+         FROM relationships WHERE project_id = ?1 AND source_file = ?2
+         ORDER BY source_line, target",
+    )?;
+    let rows = stmt.query_map(params![project_id, file_path], row_to_relationship)?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+pub fn get_parents(conn: &Connection, project_id: i64, file_path: &str) -> Result<Vec<Relationship>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, source_file, target, target_file, kind, source_line, metadata
+         FROM relationships WHERE project_id = ?1 AND target_file = ?2
+         ORDER BY source_file",
+    )?;
+    let rows = stmt.query_map(params![project_id, file_path], row_to_relationship)?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+pub fn get_all_relationships(conn: &Connection, project_id: i64) -> Result<Vec<Relationship>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, source_file, target, target_file, kind, source_line, metadata
+         FROM relationships WHERE project_id = ?1
+         ORDER BY source_file, target",
+    )?;
+    let rows = stmt.query_map(params![project_id], row_to_relationship)?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+fn row_to_relationship(row: &rusqlite::Row) -> rusqlite::Result<Relationship> {
+    Ok(Relationship {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        source_file: row.get(2)?,
+        target: row.get(3)?,
+        target_file: row.get(4)?,
+        kind: row.get(5)?,
+        source_line: row.get(6)?,
+        metadata: row.get(7)?,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Memory Scopes
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
