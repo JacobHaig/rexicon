@@ -1,6 +1,7 @@
 use crate::registry::{Language, detect_language};
 use globset::GlobSet;
 use ignore::WalkBuilder;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +10,12 @@ pub struct SourceFile {
     pub path: PathBuf,
     pub rel_path: PathBuf,
     pub language: Language,
+}
+
+pub fn hash_file(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let digest = Sha256::digest(&bytes);
+    Some(format!("{:x}", digest))
 }
 
 /// Walks `root` in parallel using all available CPU cores, producing both the
