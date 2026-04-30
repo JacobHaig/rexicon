@@ -320,9 +320,9 @@ fn main() -> Result<()> {
         Some(Command::Show {
             project,
             room,
-            topic,
+            topic: _,
             format,
-        }) => cmd_show(&project, room.as_deref(), topic.as_deref(), format),
+        }) => cmd_show(&project, room.as_deref(), format),
 
         Some(Command::Query {
             text,
@@ -503,14 +503,23 @@ fn cmd_index(
             .collect()
     };
 
+    // Compute hashes once for all source files
+    let current_hashes: HashMap<String, String> = source_files
+        .iter()
+        .filter_map(|sf| {
+            let rel = sf.rel_path.to_string_lossy().into_owned();
+            walker::hash_file(&sf.path).map(|h| (rel, h))
+        })
+        .collect();
+
     // Determine which files need re-extraction
     let files_to_extract: Vec<&walker::SourceFile> = source_files
         .iter()
         .filter(|sf| {
             let rel = sf.rel_path.to_string_lossy().into_owned();
-            match walker::hash_file(&sf.path) {
+            match current_hashes.get(&rel) {
                 Some(hash) => match existing_hashes.get(&rel) {
-                    Some(existing) => existing != &hash,
+                    Some(existing) => existing != hash,
                     None => true,
                 },
                 None => true,
@@ -521,13 +530,10 @@ fn cmd_index(
     let changed_count = files_to_extract.len();
 
     // Detect removed files
-    let current_files: std::collections::HashSet<String> = source_files
-        .iter()
-        .map(|sf| sf.rel_path.to_string_lossy().into_owned())
-        .collect();
+    let current_files: std::collections::HashSet<&String> = current_hashes.keys().collect();
     let removed: Vec<String> = existing_hashes
         .keys()
-        .filter(|k| !current_files.contains(k.as_str()))
+        .filter(|k| !current_files.contains(k))
         .cloned()
         .collect();
 
@@ -561,15 +567,13 @@ fn cmd_index(
         hierarchy::store_symbols(&conn, project_id, fi)?;
         let file_path_str = fi.rel_path.to_string_lossy();
 
-        // Update file hash
-        if let Some(sf) = source_files.iter().find(|s| s.rel_path == fi.rel_path)
-            && let Some(hash) = walker::hash_file(&sf.path)
-        {
+        // Update file hash (from pre-computed hashes)
+        if let Some(hash) = current_hashes.get(file_path_str.as_ref()) {
             schema::upsert_file_hash(
                 &conn,
                 project_id,
                 &file_path_str,
-                &hash,
+                hash,
                 Some(&fi.language),
             )?;
         }
@@ -654,12 +658,10 @@ fn cmd_list(format: OutputFormat) -> Result<()> {
 fn cmd_show(
     project_name: &str,
     room_name: Option<&str>,
-    _scope_name: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
     let conn = db::open_default()?;
-    let project = schema::get_project_by_name(&conn, project_name)?
-        .ok_or_else(|| anyhow::anyhow!("project '{}' not found", project_name))?;
+    let project = resolve_project(&conn, project_name)?;
 
     match room_name {
         None => {
@@ -920,8 +922,7 @@ fn cmd_query(
 
 fn cmd_export(project_name: &str, format: Format, output_path: Option<PathBuf>) -> Result<()> {
     let conn = db::open_default()?;
-    let project = schema::get_project_by_name(&conn, project_name)?
-        .ok_or_else(|| anyhow::anyhow!("project '{}' not found", project_name))?;
+    let project = resolve_project(&conn, project_name)?;
 
     let root = PathBuf::from(&project.root_path);
     let languages = registry::built_in_languages();
@@ -960,8 +961,7 @@ fn cmd_export(project_name: &str, format: Format, output_path: Option<PathBuf>) 
 
 fn cmd_export_memory(project_name: &str, output_dir: Option<PathBuf>) -> Result<()> {
     let conn = db::open_default()?;
-    let project = schema::get_project_by_name(&conn, project_name)?
-        .ok_or_else(|| anyhow::anyhow!("project '{}' not found", project_name))?;
+    let project = resolve_project(&conn, project_name)?;
 
     let topics = schema::list_memory_scopes(&conn, project.id)?;
     if topics.is_empty() {
@@ -1348,8 +1348,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
 
 fn cmd_diff(project_name: &str) -> Result<()> {
     let conn = db::open_default()?;
-    let project = schema::get_project_by_name(&conn, project_name)?
-        .ok_or_else(|| anyhow::anyhow!("project '{}' not found", project_name))?;
+    let project = resolve_project(&conn, project_name)?;
 
     let root = PathBuf::from(&project.root_path);
     if !root.exists() {

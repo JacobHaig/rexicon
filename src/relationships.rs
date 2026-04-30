@@ -25,32 +25,20 @@ pub fn extract_and_store(
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
 
+    let already_extracted: HashSet<String> = source_files
+        .iter()
+        .map(|sf| sf.rel_path.to_string_lossy().into_owned())
+        .collect();
+
     let mut count = 0u64;
     for sf in source_files {
         let rel_path = sf.rel_path.to_string_lossy().into_owned();
-        schema::delete_relationships_for_file(conn, project_id, &rel_path)?;
-
         let source = match std::fs::read(&sf.path) {
             Ok(b) => b,
             Err(_) => continue,
         };
-
         let refs = extract_refs(sf.language.name, &source, &rel_path);
-
-        for r in &refs {
-            let resolved = resolve_target(&r.target, r.kind, &rel_path, &file_set);
-            schema::insert_relationship(
-                conn,
-                project_id,
-                &rel_path,
-                &r.target,
-                resolved.as_deref(),
-                r.kind,
-                Some(r.line as i64),
-                None,
-            )?;
-            count += 1;
-        }
+        count += store_refs(conn, project_id, &rel_path, &refs, &file_set)?;
     }
 
     // Also extract from non-source files (markdown, config)
@@ -64,7 +52,7 @@ pub fn extract_and_store(
         let is_markdown = matches!(ext, "md" | "mdx");
 
         if is_markdown || is_config {
-            if source_files.iter().any(|sf| sf.rel_path == *rel_path) && !is_config {
+            if already_extracted.contains(&rel) && !is_config {
                 continue;
             }
 
@@ -85,25 +73,37 @@ pub fn extract_and_store(
             };
 
             if !refs.is_empty() {
-                schema::delete_relationships_for_file(conn, project_id, &rel)?;
-                for r in &refs {
-                    let resolved = resolve_target(&r.target, r.kind, &rel, &file_set);
-                    schema::insert_relationship(
-                        conn,
-                        project_id,
-                        &rel,
-                        &r.target,
-                        resolved.as_deref(),
-                        r.kind,
-                        Some(r.line as i64),
-                        None,
-                    )?;
-                    count += 1;
-                }
+                count += store_refs(conn, project_id, &rel, &refs, &file_set)?;
             }
         }
     }
 
+    Ok(count)
+}
+
+fn store_refs(
+    conn: &Connection,
+    project_id: i64,
+    rel_path: &str,
+    refs: &[RawRef],
+    file_set: &HashSet<String>,
+) -> Result<u64> {
+    schema::delete_relationships_for_file(conn, project_id, rel_path)?;
+    let mut count = 0u64;
+    for r in refs {
+        let resolved = resolve_target(&r.target, r.kind, rel_path, file_set);
+        schema::insert_relationship(
+            conn,
+            project_id,
+            rel_path,
+            &r.target,
+            resolved.as_deref(),
+            r.kind,
+            Some(r.line as i64),
+            None,
+        )?;
+        count += 1;
+    }
     Ok(count)
 }
 
@@ -383,14 +383,18 @@ fn extract_php_imports(text: &str) -> Vec<RawRef> {
 }
 
 fn extract_csharp_usings(text: &str) -> Vec<RawRef> {
+    extract_simple_imports(text, "using ")
+}
+
+fn extract_simple_imports(text: &str, keyword: &str) -> Vec<RawRef> {
     let mut refs = vec![];
     for (i, line) in text.lines().enumerate() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("using ") {
-            let ns = rest.trim_end_matches(';').trim();
-            if !ns.starts_with('(') && !ns.contains('=') {
+        if let Some(rest) = trimmed.strip_prefix(keyword) {
+            let val = rest.trim_end_matches(';').trim();
+            if !val.is_empty() && !val.starts_with('(') && !val.contains('=') {
                 refs.push(RawRef {
-                    target: ns.to_string(),
+                    target: val.to_string(),
                     kind: "imports",
                     line: (i + 1) as u32,
                 });
@@ -401,39 +405,11 @@ fn extract_csharp_usings(text: &str) -> Vec<RawRef> {
 }
 
 fn extract_swift_imports(text: &str) -> Vec<RawRef> {
-    let mut refs = vec![];
-    for (i, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("import ") {
-            let module = rest.trim();
-            if !module.is_empty() {
-                refs.push(RawRef {
-                    target: module.to_string(),
-                    kind: "imports",
-                    line: (i + 1) as u32,
-                });
-            }
-        }
-    }
-    refs
+    extract_simple_imports(text, "import ")
 }
 
 fn extract_scala_imports(text: &str) -> Vec<RawRef> {
-    let mut refs = vec![];
-    for (i, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("import ") {
-            let path = rest.trim();
-            if !path.is_empty() {
-                refs.push(RawRef {
-                    target: path.to_string(),
-                    kind: "imports",
-                    line: (i + 1) as u32,
-                });
-            }
-        }
-    }
-    refs
+    extract_simple_imports(text, "import ")
 }
 
 fn extract_lua_requires(text: &str) -> Vec<RawRef> {
@@ -484,7 +460,7 @@ fn extract_shell_sources(text: &str) -> Vec<RawRef> {
             if let Some(rest) = trimmed.strip_prefix(keyword) {
                 let path = rest.split_whitespace().next().unwrap_or("").trim();
                 let path = path.trim_matches('"').trim_matches('\'');
-                if !path.is_empty() && path.contains('/') || path.contains('.') {
+                if !path.is_empty() && (path.contains('/') || path.contains('.')) {
                     refs.push(RawRef {
                         target: path.to_string(),
                         kind: "imports",
@@ -851,8 +827,8 @@ fn resolve_import(target: &str, source_file: &str, file_set: &HashSet<String>) -
         }
     }
 
-    // Java: dots to slashes
-    if target.contains('.') && target.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) || target.contains('.') {
+    // Java: dots to slashes (only if looks like a Java package — starts with lowercase or has uppercase class name)
+    if target.contains('.') && !target.contains('/') && !target.starts_with("http") {
         let parts: Vec<&str> = target.rsplitn(2, '.').collect();
         if parts.len() == 2 {
             let path = parts[1].replace('.', "/");
@@ -969,49 +945,18 @@ fn extract_first_quoted(text: &str) -> Option<String> {
 // Graph traversal
 // ---------------------------------------------------------------------------
 
+enum Direction {
+    Children,
+    Parents,
+}
+
 pub fn traverse_tree(
     conn: &Connection,
     project_id: i64,
     root_file: &str,
     max_depth: usize,
 ) -> Result<Vec<(usize, String, bool)>> {
-    let mut result = vec![];
-    let mut visited = HashSet::new();
-    traverse_recursive(conn, project_id, root_file, 0, max_depth, &mut visited, &mut result)?;
-    Ok(result)
-}
-
-fn traverse_recursive(
-    conn: &Connection,
-    project_id: i64,
-    file: &str,
-    depth: usize,
-    max_depth: usize,
-    visited: &mut HashSet<String>,
-    result: &mut Vec<(usize, String, bool)>,
-) -> Result<()> {
-    if visited.contains(file) {
-        result.push((depth, file.to_string(), true));
-        return Ok(());
-    }
-    visited.insert(file.to_string());
-    result.push((depth, file.to_string(), false));
-
-    if depth >= max_depth {
-        return Ok(());
-    }
-
-    let children = schema::get_children(conn, project_id, file)?;
-    let mut seen_targets: HashSet<String> = HashSet::new();
-    for child in &children {
-        if let Some(ref target) = child.target_file {
-            if !seen_targets.insert(target.clone()) {
-                continue;
-            }
-            traverse_recursive(conn, project_id, target, depth + 1, max_depth, visited, result)?;
-        }
-    }
-    Ok(())
+    traverse(conn, project_id, root_file, max_depth, Direction::Children)
 }
 
 pub fn traverse_impact(
@@ -1020,18 +965,30 @@ pub fn traverse_impact(
     root_file: &str,
     max_depth: usize,
 ) -> Result<Vec<(usize, String, bool)>> {
+    traverse(conn, project_id, root_file, max_depth, Direction::Parents)
+}
+
+fn traverse(
+    conn: &Connection,
+    project_id: i64,
+    root_file: &str,
+    max_depth: usize,
+    direction: Direction,
+) -> Result<Vec<(usize, String, bool)>> {
     let mut result = vec![];
     let mut visited = HashSet::new();
-    impact_recursive(conn, project_id, root_file, 0, max_depth, &mut visited, &mut result)?;
+    traverse_recursive(conn, project_id, root_file, 0, max_depth, &direction, &mut visited, &mut result)?;
     Ok(result)
 }
 
-fn impact_recursive(
+#[allow(clippy::too_many_arguments)]
+fn traverse_recursive(
     conn: &Connection,
     project_id: i64,
     file: &str,
     depth: usize,
     max_depth: usize,
+    direction: &Direction,
     visited: &mut HashSet<String>,
     result: &mut Vec<(usize, String, bool)>,
 ) -> Result<()> {
@@ -1046,13 +1003,22 @@ fn impact_recursive(
         return Ok(());
     }
 
-    let parents = schema::get_parents(conn, project_id, file)?;
-    let mut seen_sources: HashSet<String> = HashSet::new();
-    for parent in &parents {
-        if !seen_sources.insert(parent.source_file.clone()) {
-            continue;
+    let neighbors: Vec<String> = match direction {
+        Direction::Children => schema::get_children(conn, project_id, file)?
+            .iter()
+            .filter_map(|r| r.target_file.clone())
+            .collect(),
+        Direction::Parents => schema::get_parents(conn, project_id, file)?
+            .iter()
+            .map(|r| r.source_file.clone())
+            .collect(),
+    };
+
+    let mut seen: HashSet<String> = HashSet::new();
+    for neighbor in &neighbors {
+        if seen.insert(neighbor.clone()) {
+            traverse_recursive(conn, project_id, neighbor, depth + 1, max_depth, direction, visited, result)?;
         }
-        impact_recursive(conn, project_id, &parent.source_file, depth + 1, max_depth, visited, result)?;
     }
     Ok(())
 }
