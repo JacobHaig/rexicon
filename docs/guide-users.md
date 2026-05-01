@@ -379,6 +379,55 @@ rexicon . --include 'src/**' --exclude vendor
 rexicon . --no-ignore
 ```
 
+### MCP Server (Claude Integration)
+
+Rexicon can run as an MCP (Model Context Protocol) server, giving Claude Code and Claude Desktop native tool access instead of requiring bash commands.
+
+**Starting the server:**
+
+```bash
+rexicon serve
+```
+
+This starts the MCP server over stdio. You don't run this directly — it's invoked by Claude Code or Claude Desktop via configuration.
+
+**Setup for Claude Code / Claude Desktop:**
+
+Add a `.mcp.json` file to your project root:
+
+```json
+{
+  "mcpServers": {
+    "rexicon": {
+      "command": "rexicon",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+Once configured, Claude gets native `mcp__rexicon__*` tools instead of invoking rexicon through bash. This means structured JSON responses, no text parsing, and tighter integration.
+
+**Available tools (15):**
+
+| Tool | Description |
+|---|---|
+| `list_projects` | List all indexed projects |
+| `get_project` | Show project overview (rooms, memory summary) |
+| `get_room` | Show room detail (files, symbols) |
+| `query` | Search symbols and memory |
+| `index` | Index or re-index a project |
+| `diff` | Check what changed since last index |
+| `get_children` | Direct dependencies of a file |
+| `get_parents` | What depends on a file |
+| `get_tree` | Full dependency tree downward |
+| `get_impact` | Everything affected if a file changes |
+| `memory_list` | Browse memory (projects, topics, articles) |
+| `memory_write` | Add a memory entry |
+| `memory_update` | Update an existing memory entry |
+| `memory_delete` | Delete a memory entry |
+| `memory_search` | Search memory by keyword |
+
 ---
 
 ## Common Workflows

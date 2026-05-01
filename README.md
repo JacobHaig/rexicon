@@ -66,6 +66,29 @@ my-project/
 - **Output is deterministic** — files processed in parallel, sorted by path before writing.
 - **The output file itself** (`rexicon.txt`) is excluded from its own tree.
 
+## MCP Server
+
+Rexicon can run as an MCP server for native integration with Claude Code and Claude Desktop.
+
+```bash
+rexicon serve
+```
+
+Add `.mcp.json` to your project root to configure it:
+
+```json
+{
+  "mcpServers": {
+    "rexicon": {
+      "command": "rexicon",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+This exposes all rexicon commands as native `mcp__rexicon__*` tools with structured JSON responses. See `docs/guide-users.md` for the full tool list.
+
 ## Releasing
 
 To publish a new release and build binaries for all platforms:

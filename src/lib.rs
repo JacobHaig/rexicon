@@ -1,6 +1,7 @@
 pub mod db;
 pub mod formatter;
 pub mod hierarchy;
+pub mod mcp;
 pub mod output;
 pub mod registry;
 pub mod relationships;

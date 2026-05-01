@@ -14,7 +14,6 @@ pub fn generate_rooms(
     project_id: i64,
     all_files: &[String],
 ) -> Result<()> {
-    schema::delete_rooms_for_project(conn, project_id)?;
     let mut dir_set: BTreeSet<String> = BTreeSet::new();
     let mut root_files = false;
 
@@ -30,8 +29,6 @@ pub fn generate_rooms(
             continue;
         }
 
-        // If first component is "src" and there's a subdir, use the subdir.
-        // Otherwise use the first directory component as the room name.
         let room_name = if components[0] == "src" && components.len() > 2 {
             components[1].to_string()
         } else {
@@ -45,11 +42,11 @@ pub fn generate_rooms(
         dir_set.insert("_root".to_string());
     }
 
+    // Upsert current rooms
     for room_name in &dir_set {
         let room_path = if room_name == "_root" {
             None
         } else {
-            // Check if files live under src/<room> or <room>
             let src_path = format!("src/{room_name}");
             let has_src = all_files.iter().any(|f| f.starts_with(&src_path));
             if has_src {
@@ -59,6 +56,14 @@ pub fn generate_rooms(
             }
         };
         schema::upsert_room(conn, project_id, room_name, room_path.as_deref(), None)?;
+    }
+
+    // Delete rooms that no longer exist
+    let existing = schema::list_rooms(conn, project_id)?;
+    for r in &existing {
+        if !dir_set.contains(&r.name) {
+            schema::delete_room_by_id(conn, r.id)?;
+        }
     }
 
     Ok(())
@@ -72,9 +77,10 @@ pub fn generate_topics(
     project_id: i64,
     indices: &[FileIndex],
 ) -> Result<()> {
-    schema::delete_topics_for_project(conn, project_id)?;
     let rooms = schema::list_rooms(conn, project_id)?;
     let room_map: BTreeMap<String, i64> = rooms.iter().map(|r| (r.name.clone(), r.id)).collect();
+
+    let mut current_topics: std::collections::HashSet<(i64, String)> = std::collections::HashSet::new();
 
     for fi in indices {
         let room_name = room_for_file(&fi.rel_path.to_string_lossy());
@@ -83,15 +89,14 @@ pub fn generate_topics(
             None => continue,
         };
 
-        // File-level topic
         let file_name = fi
             .rel_path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
         schema::upsert_topic(conn, room_id, file_name, "file")?;
+        current_topics.insert((room_id, file_name.to_string()));
 
-        // Significant symbol topics
         for sym in &fi.symbols {
             let is_significant = matches!(
                 sym.kind,
@@ -106,7 +111,18 @@ pub fn generate_topics(
                 let sym_name = parse_symbol_name(&sym.signature);
                 if !sym_name.is_empty() {
                     schema::upsert_topic(conn, room_id, &sym_name, "symbol_group")?;
+                    current_topics.insert((room_id, sym_name));
                 }
+            }
+        }
+    }
+
+    // Delete topics that no longer exist
+    for r in &rooms {
+        let existing = schema::list_topics(conn, r.id)?;
+        for t in &existing {
+            if !current_topics.contains(&(r.id, t.name.clone())) {
+                schema::delete_topic_by_id(conn, t.id)?;
             }
         }
     }

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rexicon": {
+      "command": "rexicon",
+      "args": ["serve"]
+    }
+  }
+}

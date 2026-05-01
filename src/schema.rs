@@ -172,6 +172,30 @@ pub fn list_rooms(conn: &Connection, project_id: i64) -> Result<Vec<Room>> {
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
+pub fn get_room_by_id(conn: &Connection, id: i64) -> Result<Option<Room>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, name, path, summary, parent_room_id
+         FROM rooms WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query(params![id])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(Room {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            name: row.get(2)?,
+            path: row.get(3)?,
+            summary: row.get(4)?,
+            parent_room_id: row.get(5)?,
+        })),
+        None => Ok(None),
+    }
+}
+
+pub fn delete_room_by_id(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM rooms WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 pub fn delete_rooms_for_project(conn: &Connection, project_id: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM rooms WHERE project_id = ?1",
@@ -254,6 +278,11 @@ pub fn list_topics(conn: &Connection, room_id: i64) -> Result<Vec<Topic>> {
         })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+pub fn delete_topic_by_id(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM topics WHERE id = ?1", params![id])?;
+    Ok(())
 }
 
 pub fn delete_topics_for_project(conn: &Connection, project_id: i64) -> Result<()> {

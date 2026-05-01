@@ -25,6 +25,10 @@ Rexicon is a local project intelligence layer. It indexes codebases into a SQLit
 
 At the beginning of every session that involves working with code:
 
+**If rexicon is available as an MCP server** (preferred — you'll see `mcp__rexicon__*` tools), use the native tools directly. They return structured JSON and require no text parsing. The workflow is the same, just use the MCP tool names instead of bash commands.
+
+**Otherwise, use the CLI:**
+
 ```bash
 # 1. Check what's indexed
 rexicon list
@@ -254,6 +258,43 @@ rexicon index /path/to/project --force
 
 # Custom project name
 rexicon index /path/to/project --name my-api
+```
+
+### MCP Server (native tools)
+
+When rexicon is configured as an MCP server (`rexicon serve`), all commands are available as native tools with structured JSON responses instead of CLI text output. The agent does not need to parse text — responses come back as typed data.
+
+The 15 MCP tools map 1:1 to CLI commands:
+
+| MCP tool | CLI equivalent |
+|---|---|
+| `list_projects` | `rexicon list` |
+| `get_project` | `rexicon show <project>` |
+| `get_room` | `rexicon show <project> <room>` |
+| `query` | `rexicon query` |
+| `index` | `rexicon index` |
+| `diff` | `rexicon diff` |
+| `get_children` | `rexicon graph children` |
+| `get_parents` | `rexicon graph parents` |
+| `get_tree` | `rexicon graph tree` |
+| `get_impact` | `rexicon graph impact` |
+| `memory_list` | `rexicon memory list` |
+| `memory_write` | `rexicon memory add` |
+| `memory_update` | `rexicon memory update` |
+| `memory_delete` | `rexicon memory delete` |
+| `memory_search` | `rexicon memory search` |
+
+To configure, add `.mcp.json` to the project root:
+
+```json
+{
+  "mcpServers": {
+    "rexicon": {
+      "command": "rexicon",
+      "args": ["serve"]
+    }
+  }
+}
 ```
 
 ---

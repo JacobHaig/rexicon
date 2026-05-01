@@ -83,15 +83,19 @@ enum Command {
     },
 
     /// Navigate the hierarchy: show <project> [room] [topic]
+    /// Navigate: no args = projects, project = rooms, project + room = symbols
     Show {
-        /// Project name
-        project: String,
+        /// Project name (optional — omit to list all projects)
+        #[arg(short, long)]
+        project: Option<String>,
 
         /// Room name (optional)
+        #[arg(short, long)]
         room: Option<String>,
 
-        /// Topic name (optional)
-        topic: Option<String>,
+        /// Positional drill-down: [project] [room]
+        #[arg(num_args = 0..=2)]
+        path: Vec<String>,
 
         /// Output format
         #[arg(long, default_value = "table")]
@@ -132,6 +136,10 @@ enum Command {
         /// Only export memory entries as markdown
         #[arg(long)]
         memory_only: bool,
+
+        /// Export everything (symbols, rooms, relationships, memory) to .rexicon/ folder
+        #[arg(long)]
+        full: bool,
     },
 
     /// Manage agent memory
@@ -151,6 +159,9 @@ enum Command {
         #[command(subcommand)]
         action: GraphAction,
     },
+
+    /// Start the MCP server (stdio transport)
+    Serve,
 }
 
 #[derive(Subcommand)]
@@ -161,7 +172,6 @@ enum GraphAction {
         /// Project name
         project: String,
         /// File path (relative to project root)
-        #[arg(long)]
         file: String,
     },
     /// What depends on this file (direct)
@@ -170,7 +180,6 @@ enum GraphAction {
         /// Project name
         project: String,
         /// File path (relative to project root)
-        #[arg(long)]
         file: String,
     },
     /// Full dependency tree downward
@@ -178,7 +187,6 @@ enum GraphAction {
         /// Project name
         project: String,
         /// Root file path
-        #[arg(long)]
         file: String,
         /// Max depth (default: 10)
         #[arg(long, default_value = "10")]
@@ -189,7 +197,6 @@ enum GraphAction {
         /// Project name
         project: String,
         /// File path
-        #[arg(long)]
         file: String,
         /// Max depth (default: 10)
         #[arg(long, default_value = "10")]
@@ -315,14 +322,18 @@ fn main() -> Result<()> {
             force,
         }) => cmd_index(dir, name, no_ignore, &includes, &excludes, force),
 
-        Some(Command::List { format }) => cmd_list(format),
+        Some(Command::List { format }) => cmd_show(None, None, format),
 
         Some(Command::Show {
             project,
             room,
-            topic: _,
+            path,
             format,
-        }) => cmd_show(&project, room.as_deref(), format),
+        }) => {
+            let project = project.or_else(|| path.first().cloned());
+            let room = room.or_else(|| path.get(1).cloned());
+            cmd_show(project.as_deref(), room.as_deref(), format)
+        }
 
         Some(Command::Query {
             text,
@@ -336,8 +347,11 @@ fn main() -> Result<()> {
             format,
             output,
             memory_only,
+            full,
         }) => {
-            if memory_only {
+            if full {
+                cmd_export_full(&project, output)
+            } else if memory_only {
                 cmd_export_memory(&project, output)
             } else {
                 cmd_export(&project, format, output)
@@ -349,6 +363,8 @@ fn main() -> Result<()> {
         Some(Command::Diff { project }) => cmd_diff(&project),
 
         Some(Command::Graph { action }) => cmd_graph(action),
+
+        Some(Command::Serve) => rexicon::mcp::serve(),
 
         None => {
             // Legacy mode: rexicon [dir] [--output ...]
@@ -614,53 +630,46 @@ fn cmd_index(
 }
 
 // ---------------------------------------------------------------------------
-// List command
-// ---------------------------------------------------------------------------
-
-fn cmd_list(format: OutputFormat) -> Result<()> {
-    let conn = db::open_default()?;
-    let projects = schema::list_projects(&conn)?;
-
-    if projects.is_empty() {
-        eprintln!("no projects indexed yet. Run: rexicon index <dir>");
-        return Ok(());
-    }
-
-    match format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&projects)?;
-            println!("{json}");
-        }
-        OutputFormat::Table => {
-            println!(
-                "{:<20} {:>6} {:>8} {:>6} LAST INDEXED",
-                "PROJECT", "FILES", "SYMBOLS", "MEMORY"
-            );
-            for p in &projects {
-                let files = schema::count_files(&conn, p.id).unwrap_or(0);
-                let symbols = schema::count_symbols(&conn, p.id).unwrap_or(0);
-                let memory = schema::count_memory(&conn, p.id).unwrap_or(0);
-                let indexed = &p.last_indexed[..std::cmp::min(16, p.last_indexed.len())];
-                println!(
-                    "{:<20} {:>6} {:>8} {:>6} {}",
-                    p.name, files, symbols, memory, indexed
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Show command
+// Show command (also handles project listing when no args)
 // ---------------------------------------------------------------------------
 
 fn cmd_show(
-    project_name: &str,
+    project_name: Option<&str>,
     room_name: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
     let conn = db::open_default()?;
+
+    // No project = list all projects
+    let project_name = match project_name {
+        Some(name) => name,
+        None => {
+            let projects = schema::list_projects(&conn)?;
+            if projects.is_empty() {
+                eprintln!("no projects indexed yet. Run: rexicon index <dir>");
+                return Ok(());
+            }
+            match format {
+                OutputFormat::Json => {
+                    let json = serde_json::to_string_pretty(&projects)?;
+                    println!("{json}");
+                }
+                OutputFormat::Table => {
+                    for p in &projects {
+                        let files = schema::count_files(&conn, p.id).unwrap_or(0);
+                        let symbols = schema::count_symbols(&conn, p.id).unwrap_or(0);
+                        let memory = schema::count_memory(&conn, p.id).unwrap_or(0);
+                        println!(
+                            "  [{:<3}] {:<20} {} files, {} symbols, {} memory",
+                            p.id, p.name, files, symbols, memory
+                        );
+                    }
+                }
+            }
+            return Ok(());
+        }
+    };
+
     let project = get_project(&conn, project_name)?;
 
     match room_name {
@@ -702,10 +711,8 @@ fn cmd_show(
                             let topics = schema::list_topics(&conn, r.id)?;
                             let summary = r.summary.as_deref().unwrap_or("");
                             println!(
-                                "  {:<20} {:<40} {} topics",
-                                r.name,
-                                summary,
-                                topics.len()
+                                "  [{:<3}] {:<20} {:<40} {} topics",
+                                r.id, r.name, summary, topics.len()
                             );
                         }
                     }
@@ -720,16 +727,20 @@ fn cmd_show(
             }
         }
         Some(rn) => {
-            // Room detail
-            let room = schema::get_room_by_name(&conn, project.id, rn)?
-                .ok_or_else(|| anyhow::anyhow!("room '{}' not found in project '{}'", rn, project_name))?;
+            // Room detail — resolve by name or ID
+            let room = if let Ok(id) = rn.parse::<i64>() {
+                schema::get_room_by_id(&conn, id)?
+            } else {
+                schema::get_room_by_name(&conn, project.id, rn)?
+            }
+            .ok_or_else(|| anyhow::anyhow!("room '{}' not found in project '{}'", rn, project_name))?;
             let topics = schema::list_topics(&conn, room.id)?;
 
             // Get symbols for files in this room
             let symbols = schema::list_symbols_for_project(&conn, project.id)?;
             let room_symbols: Vec<_> = symbols
                 .iter()
-                .filter(|s| hierarchy::room_for_file(&s.file_path) == rn)
+                .filter(|s| hierarchy::room_for_file(&s.file_path) == room.name)
                 .collect();
 
             match format {
@@ -742,7 +753,7 @@ fn cmd_show(
                     println!("{}", serde_json::to_string_pretty(&data)?);
                 }
                 OutputFormat::Table => {
-                    println!("{} / {}", project_name, rn);
+                    println!("{} / {}", project.name, room.name);
                     if let Some(s) = &room.summary {
                         println!("{s}");
                     }
@@ -1005,6 +1016,120 @@ fn cmd_export_memory(project_name: &str, output_dir: Option<PathBuf>) -> Result<
 
     eprintln!(
         "exported {count} memory entries to {}",
+        base.display()
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Full export
+// ---------------------------------------------------------------------------
+
+fn cmd_export_full(project_name: &str, output_dir: Option<PathBuf>) -> Result<()> {
+    let conn = db::open_default()?;
+    let project = get_project(&conn, project_name)?;
+
+    let base = output_dir.unwrap_or_else(|| PathBuf::from(".rexicon"));
+    std::fs::create_dir_all(&base)?;
+
+    use std::io::Write;
+
+    // 1. Project metadata
+    let meta = serde_json::json!({
+        "name": project.name,
+        "root_path": project.root_path,
+        "tech_stack": project.tech_stack,
+        "architecture": project.architecture,
+        "head_commit": project.head_commit,
+        "last_indexed": project.last_indexed,
+    });
+    let mut f = std::fs::File::create(base.join("project.json"))?;
+    writeln!(f, "{}", serde_json::to_string_pretty(&meta)?)?;
+
+    // 2. Rooms
+    let rooms = schema::list_rooms(&conn, project.id)?;
+    let rooms_json: Vec<serde_json::Value> = rooms.iter().map(|r| {
+        let topics = schema::list_topics(&conn, r.id).unwrap_or_default();
+        serde_json::json!({
+            "id": r.id, "name": r.name, "path": r.path, "summary": r.summary,
+            "topics": topics.iter().map(|t| serde_json::json!({
+                "name": t.name, "kind": t.kind, "summary": t.summary
+            })).collect::<Vec<_>>()
+        })
+    }).collect();
+    let mut f = std::fs::File::create(base.join("rooms.json"))?;
+    writeln!(f, "{}", serde_json::to_string_pretty(&rooms_json)?)?;
+
+    // 3. Symbols (grouped by file)
+    let symbols = schema::list_symbols_for_project(&conn, project.id)?;
+    let mut by_file: std::collections::BTreeMap<&str, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    for s in &symbols {
+        by_file.entry(&s.file_path).or_default().push(serde_json::json!({
+            "kind": s.kind, "name": s.name, "signature": s.signature,
+            "line_start": s.line_start, "line_end": s.line_end,
+            "parent_symbol_id": s.parent_symbol_id
+        }));
+    }
+    let mut f = std::fs::File::create(base.join("symbols.json"))?;
+    writeln!(f, "{}", serde_json::to_string_pretty(&by_file)?)?;
+
+    // 4. Symbol tree (rexicon.txt format)
+    let root = PathBuf::from(&project.root_path);
+    let languages = registry::built_in_languages();
+    let empty = build_globset(&[])?;
+    let (all_files, source_files) = walker::walk(&root, &languages, None, false, &empty, &empty);
+    let mut indices: Vec<symbol::FileIndex> = source_files
+        .par_iter()
+        .filter_map(|file| treesitter::extract(file).ok())
+        .collect();
+    indices.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    let tree_text = formatter::format(&all_files, &indices, &project.name);
+    std::fs::write(base.join("symbols.txt"), &tree_text)?;
+
+    // 5. Relationships
+    let rels = schema::get_all_relationships(&conn, project.id)?;
+    let rels_json: Vec<serde_json::Value> = rels.iter().map(|r| {
+        serde_json::json!({
+            "source_file": r.source_file, "target": r.target,
+            "target_file": r.target_file, "kind": r.kind,
+            "source_line": r.source_line
+        })
+    }).collect();
+    let mut f = std::fs::File::create(base.join("relationships.json"))?;
+    writeln!(f, "{}", serde_json::to_string_pretty(&rels_json)?)?;
+
+    // 6. Memory
+    let mem_dir = base.join("memory");
+    std::fs::create_dir_all(&mem_dir)?;
+    let scopes = schema::list_memory_scopes(&conn, project.id)?;
+    let mut mem_count = 0;
+    for scope in &scopes {
+        let articles = schema::list_memory_by_scope(&conn, scope.id)?;
+        if articles.is_empty() {
+            continue;
+        }
+        let safe_name = scope.name.replace(' ', "-").to_lowercase();
+        let mut f = std::fs::File::create(mem_dir.join(format!("{safe_name}.md")))?;
+        writeln!(f, "# {}\n", scope.name)?;
+        for a in &articles {
+            let tags = a.tags.as_ref()
+                .map(|t| format!("tags: {}", t.join(", ")))
+                .unwrap_or_default();
+            let stale = if a.stale { " [STALE]" } else { "" };
+            writeln!(f, "## {}{}\n", a.title, stale)?;
+            writeln!(f, "{}\n", a.body)?;
+            if !tags.is_empty() {
+                writeln!(f, "_{}_", tags)?;
+            }
+            writeln!(f, "_author: {}, id: {}_\n", a.author, a.id)?;
+            writeln!(f, "---\n")?;
+            mem_count += 1;
+        }
+    }
+
+    eprintln!(
+        "exported to {}: project.json, rooms.json, symbols.json, symbols.txt, relationships.json, {mem_count} memory articles",
         base.display()
     );
     Ok(())

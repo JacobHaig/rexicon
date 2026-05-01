@@ -15,6 +15,7 @@ cargo build                                   # debug build
 cargo build --release                         # release build
 cargo run -- <target-dir>                     # index a project → writes rexicon.txt
 cargo run -- <target-dir> --output <path>     # custom output path
+cargo run -- serve                            # start MCP server over stdio
 cargo test                                    # run all tests
 cargo test <test_name>                        # run a single test
 cargo clippy -- -D warnings                   # lint
@@ -243,6 +244,35 @@ Flag matrix to cover:
 Every command should exit `0` and print a `wrote <path> (N files indexed,
 M total)` line to stderr. If any expected file is missing from the tree,
 or appears when it shouldn't, that's the bug to chase.
+
+## MCP Server Parity Rule
+
+The MCP server (`src/mcp.rs`) must expose every CLI command as a tool. There is a strict 1:1 mapping between CLI commands and MCP tools. When you add, remove, or change a CLI command, you must update the MCP server to match.
+
+Current mapping:
+
+| CLI command | MCP tool |
+|---|---|
+| `rexicon list` | `list_projects` |
+| `rexicon show <project>` | `get_project` |
+| `rexicon show <project> <room>` | `get_room` |
+| `rexicon query` | `query` |
+| `rexicon index` | `index` |
+| `rexicon diff` | `diff` |
+| `rexicon graph children` | `get_children` |
+| `rexicon graph parents` | `get_parents` |
+| `rexicon graph tree` | `get_tree` |
+| `rexicon graph impact` | `get_impact` |
+| `rexicon memory list` | `memory_list` |
+| `rexicon memory add` | `memory_write` |
+| `rexicon memory update` | `memory_update` |
+| `rexicon memory delete` | `memory_delete` |
+| `rexicon memory search` | `memory_search` |
+
+After any change to CLI commands in `main.rs`, verify:
+1. The corresponding MCP tool in `mcp.rs` has matching parameters and behavior
+2. The `tool_definitions()` function lists the tool with correct input schema
+3. The `handle_tools_call()` dispatch includes the tool name
 
 ## Relevant crates
 
