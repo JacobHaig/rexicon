@@ -4,22 +4,54 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-**rexicon** is a multi-language code indexer that walks a project directory and emits a single `rexicon.txt` file designed for LLM consumption. The file is a unified box-drawing tree showing folder structure, every symbol's signature, and line numbers — all in one document an LLM can navigate without reading source files.
+**rexicon** is a local, agent-native project intelligence layer. It indexes a codebase into a SQLite database that stores symbols, file relationships (import graphs), a directory-derived room/topic hierarchy, and persistent agent memory — all queryable from the CLI, an MCP server, or exported as files.
 
-Symbol extraction uses **tree-sitter** parse trees. No regex is used anywhere. LSP support is planned as a future layer on top.
+The original v1 behavior (walk a directory, emit a `rexicon.txt` box-drawing tree) is preserved as both a legacy CLI path and the `export` subcommand.
+
+Symbol extraction uses **tree-sitter** parse trees. Relationship extraction (imports, references) uses line-level parsers for 14 languages. No regex is used for symbol extraction. The MCP server exposes every CLI command as a JSON-RPC tool over stdio.
 
 ## Commands
 
 ```bash
+# Build & test
 cargo build                                   # debug build
 cargo build --release                         # release build
-cargo run -- <target-dir>                     # index a project → writes rexicon.txt
-cargo run -- <target-dir> --output <path>     # custom output path
-cargo run -- serve                            # start MCP server over stdio
 cargo test                                    # run all tests
 cargo test <test_name>                        # run a single test
 cargo clippy -- -D warnings                   # lint
 cargo fmt                                     # format
+
+# Legacy mode (v1 — writes rexicon.txt)
+cargo run -- <target-dir>                     # index a project → writes rexicon.txt
+cargo run -- <target-dir> --output <path>     # custom output path
+
+# Database-backed commands (v2)
+cargo run -- index <dir>                      # index project into SQLite (incremental)
+cargo run -- index <dir> --force              # full re-index ignoring hashes
+cargo run -- list                             # list all indexed projects
+cargo run -- show <project>                   # project overview (rooms, topics)
+cargo run -- show <project> <room>            # room detail (files, symbols)
+cargo run -- query <text> --project <p>       # search symbols and memory
+cargo run -- diff <project>                   # changed/added/removed since last index
+cargo run -- export <project>                 # export rexicon.txt from DB
+cargo run -- export <project> --full          # full export to .rexicon/ folder
+cargo run -- export <project> --memory-only   # export memory as markdown
+
+# Relationship graph
+cargo run -- graph children <project> <file>  # direct dependencies of a file
+cargo run -- graph parents <project> <file>   # what depends on this file
+cargo run -- graph tree <project> <file>      # full dependency tree downward
+cargo run -- graph impact <project> <file>    # reverse tree (change impact)
+
+# Agent memory
+cargo run -- memory list [project] [scope] [article]  # browse memory hierarchy
+cargo run -- memory add -p <proj> -s <scope> <title> <body>
+cargo run -- memory update <id> --title ... --body ...
+cargo run -- memory delete <project> <scope> [article]
+cargo run -- memory search <query>
+
+# MCP server
+cargo run -- serve                            # start MCP server over stdio
 ```
 
 ## Design philosophy
@@ -31,6 +63,8 @@ cargo fmt                                     # format
 
 ## Pipeline
 
+### Legacy / export pipeline (v1)
+
 ```
 walk(root, languages, ...)           → (Vec<PathBuf>, Vec<SourceFile>)   single parallel pass
   par_iter → extract(file)           → FileIndex                         parallel via rayon, pure per-file
@@ -38,6 +72,19 @@ walk(root, languages, ...)           → (Vec<PathBuf>, Vec<SourceFile>)   singl
   collect + sort_by_path             → Vec<FileIndex>                    deterministic
   format(all_files, indices)         → String                            pure
   write_output(text, path)           → ()                                single I/O side-effect
+```
+
+### Index pipeline (v2)
+
+```
+walk(root, languages, ...)           → (Vec<PathBuf>, Vec<SourceFile>)   single parallel pass
+  hash_file(path)                    → SHA-256 per file                  incremental: skip unchanged
+  par_iter → extract(file)           → FileIndex                         only changed files
+  hierarchy::generate_rooms(conn)    → rooms from directory structure
+  hierarchy::store_symbols(conn, fi) → symbols into SQLite
+  hierarchy::generate_topics(conn)   → topics from file grouping
+  relationships::index_relationships → import/ref graph into SQLite      14-language parser
+  schema::flag_stale_memory(conn)    → mark memory articles when code changes
 ```
 
 `walk()` returns both the full file list (for the tree structure) and the
@@ -55,17 +102,22 @@ without filesystem access — and dispatches to:
 
 ```
 src/
-  lib.rs         ← re-exports the modules below so tests and main.rs share the same crate
-  main.rs        ← CLI (clap), orchestration (thin wrapper over the library)
-  walker.rs      ← walk(), SourceFile type, parallel .gitignore-aware walk, include/exclude filters
-  registry.rs    ← Language type, built-in extension→language table
-  symbol.rs      ← Symbol, SymbolKind, FileIndex — shared data types only
-  treesitter.rs  ← tree-sitter extraction, per-language LangRules, markdown scanner
-  formatter.rs   ← format() / format_plain() → String, renders the unified tree or flat form
-  output.rs      ← write_output(), single file-write function
+  lib.rs            ← re-exports all modules so tests and main.rs share the same crate
+  main.rs           ← CLI (clap subcommands), orchestration
+  walker.rs         ← walk(), SourceFile, parallel .gitignore-aware walk, file hashing (SHA-256)
+  registry.rs       ← Language type, extension→language table
+  symbol.rs         ← Symbol, SymbolKind, FileIndex — shared data types
+  treesitter.rs     ← tree-sitter extraction, per-language LangRules, markdown scanner
+  formatter.rs      ← format()/format_plain() → String, box-tree rendering
+  output.rs         ← write_output(), single file-write function
+  db.rs             ← SQLite connection, schema migrations, WAL mode
+  schema.rs         ← all DB types and CRUD (Project, Room, Topic, DbSymbol, Memory, MemoryScope, Relationship)
+  hierarchy.rs      ← room/topic generation from directories, symbol storage
+  relationships.rs  ← import/reference parsing for 14 languages, path resolution, graph traversal
+  mcp.rs            ← MCP server (JSON-RPC over stdio, 15 tools)
 
 tests/
-  languages.rs   ← integration tests; one per supported language plus regressions
+  languages.rs      ← integration tests; one per supported language plus regressions
 ```
 
 The crate is both a binary and a library. `src/lib.rs` just re-exports the
@@ -98,6 +150,8 @@ core is exposed as `pub fn extract_from_bytes(rel_path, lang_name, source)` in
 
 ## Core types
 
+### Extraction types (symbol.rs, walker.rs)
+
 ```rust
 struct SourceFile {
     path: PathBuf,       // absolute
@@ -123,6 +177,82 @@ enum SymbolKind {
     Function, Method, Struct, Enum, Trait, Interface, Class,
     Constant, TypeAlias, Module, Impl, Variant, Macro,
     Heading(u8),  // markdown only; u8 = heading level 1–6
+}
+```
+
+### Database types (schema.rs)
+
+```rust
+struct Project {
+    id: i64,
+    name: String,
+    root_path: String,
+    tech_stack: Option<Vec<String>>,
+    architecture: Option<String>,
+    entry_points: Option<Vec<String>>,
+    head_commit: Option<String>,
+    last_indexed: String,
+    created_at: String,
+    updated_at: String,
+}
+
+struct Room {
+    id: i64,
+    project_id: i64,
+    name: String,
+    path: Option<String>,
+    summary: Option<String>,
+    parent_room_id: Option<i64>,
+}
+
+struct Topic {
+    id: i64,
+    room_id: i64,
+    name: String,
+    kind: String,          // "file", "group", etc.
+    summary: Option<String>,
+}
+
+struct DbSymbol {
+    id: i64,
+    project_id: i64,
+    content_id: Option<i64>,
+    kind: String,
+    signature: String,
+    name: String,
+    file_path: String,
+    line_start: i64,
+    line_end: i64,
+    parent_symbol_id: Option<i64>,
+}
+
+struct MemoryScope {
+    id: i64,
+    project_id: i64,
+    name: String,
+}
+
+struct Memory {
+    id: i64,
+    scope_id: i64,
+    title: String,
+    body: String,
+    tags: Option<Vec<String>>,
+    author: String,
+    stale: bool,           // flagged when code changes after memory was written
+    created_at: String,
+    updated_at: String,
+}
+
+struct Relationship {
+    id: i64,
+    project_id: i64,
+    source_file: String,
+    target: String,        // raw import path
+    target_file: Option<String>,  // resolved file path
+    kind: String,          // "import", "reference", "config_path"
+    source_line: Option<i64>,
+    metadata: Option<String>,
 }
 ```
 
@@ -280,6 +410,13 @@ After any change to CLI commands in `main.rs`, verify:
 |---|---|
 | `rayon` | Data-parallel file processing |
 | `ignore` | `.gitignore`-aware directory walk |
-| `clap` | CLI argument parsing |
+| `clap` | CLI argument parsing (derive mode) |
 | `tree-sitter` + grammar crates | Symbol extraction via parse trees |
 | `anyhow` | Error propagation |
+| `rusqlite` (bundled) | SQLite database (WAL mode) |
+| `serde` / `serde_json` | JSON serialization for DB fields, MCP protocol, and export |
+| `sha2` | SHA-256 file hashing for incremental indexing |
+| `chrono` | Timestamps for DB records |
+| `dirs` | Platform-appropriate data directory for the database |
+| `toml` | Config file parsing |
+| `globset` | Include/exclude glob pattern matching |

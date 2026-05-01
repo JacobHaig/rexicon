@@ -51,42 +51,108 @@ ARGS="$ARGUMENTS"
 "$BIN" $ARGS
 ```
 
-After this block runs, rexicon will have written an output file (by default
-`rexicon.txt` in the target directory, or at the path passed with
-`--output`). Read that file to inspect the project. The top of the file is a
-single header comment, then a `rexicon — <project>` title, then the tree.
+After this block runs, rexicon indexes the project into a local SQLite
+database and writes a `rexicon.txt` file (by default in the target directory,
+or at the path passed with `--output`). The database persists across sessions,
+enabling incremental re-indexing, memory, and relationship queries.
+
+## MCP server (preferred for agent use)
+
+The MCP server exposes rexicon's full capabilities as native tools. Configure
+it in `~/.claude/settings.json` or the project `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "rexicon": {
+      "command": "rexicon",
+      "args": ["serve"],
+      "env": {}
+    }
+  }
+}
+```
+
+This makes all rexicon tools available as `mcp__rexicon__<tool_name>` in
+Claude Code. Key tools: `list_projects`, `get_project`, `get_room`,
+`get_topic`, `query`, `get_symbols`, `write_memory`, `search_memory`,
+`index`, `diff`, `get_imports`, `get_impact`.
+
+When the MCP server is running, prefer the structured tools over CLI
+invocations — they return typed JSON and avoid text parsing.
 
 ## Reading the output
 
-- The tree mirrors the directory structure. Every file that rexicon could
-  parse is annotated with `[language]`.
-- Under each file, symbols appear as children — functions, structs, classes,
-  impls, enum variants, markdown headings. Each symbol shows its full
-  signature (bodies elided as `{ ... }` or `= ...`) and a `[start:end]` line
-  range (or just `[line]` for single-line items).
-- Entries are sorted alphabetically at every level and the output is
-  deterministic across runs — safe to diff.
+There are three ways to inspect what rexicon knows:
 
-When the user asks about a specific file, class, or function, grep
-`rexicon.txt` for it rather than re-reading the source. Jump to the source
-using the line numbers rexicon reports only when you need the full body.
+1. **`rexicon show`** — hierarchical navigation via CLI.
+   - `rexicon show <project>` — project overview with rooms.
+   - `rexicon show <project> <room>` — room details, topics, symbols, memory.
+   - `rexicon show <project> <room> <topic>` — full topic content.
 
-## Flag reference
+2. **`rexicon memory list`** — browse or search agent-written memory.
+   - `rexicon memory list --project <name>` — topics with memory.
+   - `rexicon memory list --project <name> --topic <topic>` — articles.
+   - `rexicon memory search "<query>" --project <name>` — search memory.
+
+3. **`rexicon.txt`** — the classic box-drawing tree file. Still written by
+   default when indexing. The tree mirrors the directory structure; every
+   file rexicon could parse is annotated with `[language]`. Under each file,
+   symbols appear as children with `[start:end]` line ranges. Entries are
+   sorted alphabetically and the output is deterministic across runs.
+
+When the user asks about a specific file, class, or function, use
+`rexicon show` or `rexicon query` first. Fall back to grepping
+`rexicon.txt` if the database is not available. Jump to the source using
+the line numbers rexicon reports only when you need the full body.
+
+## Subcommand reference
+
+| Subcommand | Purpose |
+|---|---|
+| `index <dir>` | Index or re-index a project into the database. |
+| `list` | List all indexed projects. |
+| `show <project> [room] [topic]` | Navigate the hierarchy: project, room, or topic. |
+| `query <text>` | Search across symbols, memory, and content. |
+| `memory add\|list\|get\|update\|delete\|search\|compact` | Manage agent-written memory. |
+| `graph imports\|importers\|calls\|callers\|deps\|impact\|export` | Query the relationship graph. |
+| `diff <project>` | Show what changed since last index (files + stale memory). |
+| `export <project>` | Export project data to files (txt, json, md). |
+| `serve` | Start the MCP server (stdio by default, or `--transport tcp`). |
+| `config show\|set\|reset` | View or modify configuration. |
+
+### Common flags (on `index`)
 
 | Flag | Meaning |
 |---|---|
-| `<target-dir>` | Root to index. Defaults to `.` if omitted. |
+| `<dir>` | Root to index. Defaults to `.` if omitted. |
+| `--name <name>` | Project name (default: directory name). |
 | `-o, --output <path>` | Output file (default: `<target>/rexicon.txt`). |
-| `--no-ignore` | Include files normally excluded by `.gitignore` (`target/`, `node_modules/`, etc). |
+| `--no-ignore` | Include files normally excluded by `.gitignore`. |
 | `--include <glob>` | Only index matching paths. Repeatable. |
 | `--exclude <glob>` | Skip matching paths. Repeatable. Bare names like `vendor` expand to `{vendor,vendor/**}`. |
-| `--format txt\|plain` | `txt` (default) = box-drawing tree. `plain` = one `path:line⇥signature` per symbol, grep-friendly. |
+| `--format txt\|plain` | `txt` (default) = box-drawing tree. `plain` = flat, grep-friendly. |
+| `--force` | Force full re-index (ignore file hashes). |
+
+### Backward compatibility
+
+Running `rexicon <dir>` without a subcommand still works as in v1 — it
+indexes the project and writes `rexicon.txt`.
 
 ## Common invocations
 
 - `/rexicon` — index the current directory, write `./rexicon.txt`.
-- `/rexicon src/` — only index the `src/` subtree.
-- `/rexicon . --format plain --output /tmp/rexicon.tsv` — flat output, suitable for piping into other tools.
+- `/rexicon index . --name my-project` — index with an explicit project name.
+- `/rexicon show my-project` — browse the project hierarchy.
+- `/rexicon show my-project auth` — inspect the `auth` room's topics and symbols.
+- `/rexicon query "authentication flow" --project my-project` — search across all content.
+- `/rexicon memory list --project my-project --tags gotcha` — list gotchas.
+- `/rexicon memory add --project my-project --topic conventions "Use snake_case for DB columns" "All database columns..." --tags convention` — record a team convention.
+- `/rexicon diff my-project` — see what changed since last index.
+- `/rexicon graph impact my-project --file src/auth/jwt.rs` — impact analysis.
+- `/rexicon export my-project --format md --output docs/rexicon/` — export for team review.
+- `/rexicon serve` — start the MCP server for native tool access.
+- `/rexicon . --format plain --output /tmp/rexicon.tsv` — legacy flat output.
 - `/rexicon . --exclude vendor --exclude '**/generated/**'` — skip third-party and generated code.
 - `/rexicon . --no-ignore` — include `target/`, `node_modules/`, and other gitignored dirs.
 

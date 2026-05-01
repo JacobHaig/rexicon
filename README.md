@@ -1,6 +1,6 @@
 # rexicon
 
-Indexes a codebase into a single `rexicon.txt` file designed for LLM consumption. The output is a unified box-drawing tree that shows folder structure, every symbol's full signature, and line numbers — giving a language model an accurate map of a project without reading individual source files.
+A local, agent-native project intelligence layer. Indexes codebases into a persistent SQLite database with hierarchical navigation, a relationship graph, agent memory, and an MCP server -- giving AI agents (and humans) structured access to project knowledge without reading individual source files.
 
 ## Installation
 
@@ -11,34 +11,120 @@ cargo build --release
 # Binary is at target/release/rexicon
 ```
 
-## Usage
+## Quick start
 
 ```bash
-# Index a project — writes rexicon.txt in the project root
-rexicon /path/to/project
+# Index your project into the database
+rexicon index .
 
-# Write to a custom location
-rexicon /path/to/project --output /path/to/output.txt
+# Browse what was indexed
+rexicon show my-project
 
-# Include files that .gitignore would normally exclude (e.g. target/, node_modules/)
-rexicon /path/to/project --no-ignore
+# Search symbols and memory
+rexicon query "authentication"
 
-# Only index matching paths (repeatable)
-rexicon /path/to/project --include 'src/**' --include 'lib/**'
+# See what changed since last index
+rexicon diff my-project
 
-# Skip matching paths (repeatable)
-rexicon /path/to/project --exclude 'vendor/' --exclude '**/generated/**'
+# Start the MCP server for Claude Code / Desktop
+rexicon serve
+```
 
-# Flat "path:line  signature" output instead of the box-drawing tree
-rexicon /path/to/project --format plain
+## Usage
+
+### Indexing
+
+```bash
+rexicon index <dir>                           # Index into ~/.rexicon/store.db
+rexicon index <dir> --name my-api             # Custom project name
+rexicon index <dir> --force                   # Full re-index (ignore file hashes)
+rexicon index <dir> --include 'src/**'        # Only matching paths (repeatable)
+rexicon index <dir> --exclude vendor          # Skip matching paths (repeatable)
+rexicon index <dir> --no-ignore               # Include gitignored files
+```
+
+Re-indexing is incremental -- only files whose content hash changed are re-processed.
+
+### Navigating the hierarchy
+
+Rexicon organizes every project into **projects > rooms > symbols**. Rooms are auto-generated from the directory structure. Use `show` to drill down.
+
+```bash
+rexicon show                                  # List all indexed projects
+rexicon show <project>                        # Rooms in a project
+rexicon show <project> <room>                 # Files and symbols in a room
+rexicon show <project> --format json          # JSON output
+```
+
+### Searching
+
+```bash
+rexicon query <text>                          # Search all projects
+rexicon query <text> --project my-api         # Scope to one project
+rexicon query <text> --kind symbol            # Filter: symbol or memory
+```
+
+### Memory
+
+Persistent notes organized as **Project > Scope > Article**. Browse with a 4-level drill-down.
+
+```bash
+rexicon memory list                           # Projects with memory
+rexicon memory list <project>                 # Scopes in a project
+rexicon memory list <project> <scope>         # Articles in a scope
+rexicon memory list <project> <scope> <title> # Full article
+
+rexicon memory add -p my-api -s "auth" "Title" "Body text" --tags "gotcha,auth"
+rexicon memory update <id> --body "new body"
+rexicon memory delete <project> <scope> [article]
+rexicon memory search "keyword" --project my-api
+```
+
+### Relationship graph
+
+Auto-extracted imports, references, markdown links, and config paths across all supported languages.
+
+```bash
+rexicon graph children <project> <file>       # Direct dependencies (alias: c)
+rexicon graph parents <project> <file>        # Reverse dependencies (alias: p)
+rexicon graph tree <project> <file>           # Full dependency tree downward
+rexicon graph impact <project> <file>         # Everything affected by a change
+```
+
+### Diff
+
+```bash
+rexicon diff <project>                        # Changed/added/removed since last index
+```
+
+### Export
+
+```bash
+rexicon export <project>                      # Box-drawing tree to rexicon.txt
+rexicon export <project> --format plain       # Flat path:line format
+rexicon export <project> --memory-only        # Memory as markdown files
+rexicon export <project> --full               # Everything to .rexicon/ folder
+```
+
+`--full` dumps `project.json`, `rooms.json`, `symbols.json`, `symbols.txt`, `relationships.json`, and memory markdown files.
+
+### Legacy mode
+
+The original v1 command still works -- writes `rexicon.txt` and stores data in the database as a side effect.
+
+```bash
+rexicon <dir>                                 # Writes <dir>/rexicon.txt
+rexicon <dir> --output /tmp/index.txt         # Custom output path
+rexicon <dir> --format plain                  # Flat output
+rexicon <dir> --include 'src/**' --exclude vendor --no-ignore
 ```
 
 ## Output format
 
-The entire project is one tree. Symbols nest under their file, nested declarations (methods, enum variants) nest under their container. Each symbol shows its full signature and line range.
+The legacy and export commands produce a unified box-drawing tree. Symbols nest under their file, nested declarations nest under their container. Each symbol shows its full signature and line range.
 
 ```
-# rexicon — my-project
+# rexicon -- my-project
 
 my-project/
 ├── Cargo.toml
@@ -60,21 +146,21 @@ my-project/
             └── pub fn validate(&self) -> bool { ... }  [27:39]
 ```
 
-- **Bodies are always elided** — `{ ... }` for blocks, `= ...` for value assignments (consts, type aliases).
-- **Line numbers** are shown as `[line]` for single-line declarations and `[start:end]` for multi-line ones.
-- **Markdown headings** are nested by level (`##` becomes a child of the preceding `#`).
-- **Output is deterministic** — files processed in parallel, sorted by path before writing.
-- **The output file itself** (`rexicon.txt`) is excluded from its own tree.
+- **Bodies are always elided** -- `{ ... }` for blocks, `= ...` for value assignments.
+- **Line numbers** shown as `[line]` (single-line) or `[start:end]` (multi-line).
+- **Markdown headings** nest by level.
+- **Deterministic output** -- parallel processing, sorted before writing.
+- **The output file itself** is excluded from its own tree.
 
 ## MCP Server
 
-Rexicon can run as an MCP server for native integration with Claude Code and Claude Desktop.
+Rexicon runs as an MCP server for native integration with Claude Code and Claude Desktop.
 
 ```bash
 rexicon serve
 ```
 
-Add `.mcp.json` to your project root to configure it:
+Add `.mcp.json` to your project root:
 
 ```json
 {
@@ -87,18 +173,38 @@ Add `.mcp.json` to your project root to configure it:
 }
 ```
 
-This exposes all rexicon commands as native `mcp__rexicon__*` tools with structured JSON responses. See `docs/guide-users.md` for the full tool list.
+This exposes 15 native `mcp__rexicon__*` tools with structured JSON responses:
+
+| Tool | Description |
+|---|---|
+| `list_projects` | List all indexed projects |
+| `get_project` | Project overview (rooms, memory summary) |
+| `get_room` | Room detail (files, symbols) |
+| `query` | Search symbols and memory |
+| `index` | Index or re-index a project |
+| `diff` | What changed since last index |
+| `get_children` | Direct dependencies of a file |
+| `get_parents` | What depends on a file |
+| `get_tree` | Full dependency tree downward |
+| `get_impact` | Everything affected if a file changes |
+| `memory_list` | Browse memory (projects, scopes, articles) |
+| `memory_write` | Add a memory entry |
+| `memory_update` | Update an existing memory entry |
+| `memory_delete` | Delete a memory entry |
+| `memory_search` | Search memory by keyword |
+
+See [docs/guide-users.md](docs/guide-users.md) for the full user guide.
 
 ## Releasing
 
 To publish a new release and build binaries for all platforms:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-The release CI will trigger automatically on any `v*` tag, build binaries for Linux x86-64, macOS x86-64, macOS ARM, and Windows x86-64, and upload them to a GitHub Release.
+The release CI builds binaries for Linux x86-64, macOS x86-64, macOS ARM, and Windows x86-64, and uploads them to a GitHub Release.
 
 ## Supported languages
 
@@ -122,20 +228,24 @@ The release CI will trigger automatically on any `v*` tag, build binaries for Li
 | Shell | `.sh`, `.bash` |
 | Markdown | `.md`, `.mdx` |
 
-Symbol extraction uses **tree-sitter** parse trees for every language except
-Markdown, which uses a lightweight ATX heading scanner. No regex is used
-anywhere. Hidden files and anything matched by `.gitignore` are excluded by
-default — pass `--no-ignore` to include them.
+Symbol extraction uses **tree-sitter** parse trees for every language except Markdown, which uses a lightweight ATX heading scanner. Relationship extraction detects imports, references, markdown links, and config file paths across all languages. Hidden files and anything matched by `.gitignore` are excluded by default.
+
+## Data location
+
+| Path | Contents |
+|---|---|
+| `~/.rexicon/store.db` | SQLite database (projects, symbols, rooms, relationships, memory) |
+
+The database is a single file. Back it up, copy it between machines, or delete it to start fresh.
 
 ## Development
 
 ```bash
 cargo build                        # debug build
 cargo build --release              # release build
-cargo test                         # run the full integration test suite (tests/languages.rs)
+cargo test                         # run the full integration test suite
 cargo clippy --all-targets -- -D warnings
 cargo fmt
 ```
 
-Tests cover every supported language plus regression cases for nested-symbol
-extraction. Add a `#[test]` in `tests/languages.rs` when adding a language.
+Tests cover every supported language plus regression cases for nested-symbol extraction. Add a `#[test]` in `tests/languages.rs` when adding a language.
