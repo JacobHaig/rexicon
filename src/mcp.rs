@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 
-use crate::{db, hierarchy, relationships, schema};
+use crate::{db, hierarchy, relationships, schema, walker};
 
 pub fn serve() -> Result<()> {
     let stdin = std::io::stdin();
@@ -349,7 +349,7 @@ fn tool_list_projects() -> Result<Value> {
 fn tool_get_project(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
     let name = arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?;
-    let project = get_project_by_input(&conn, name)?;
+    let project = schema::get_project(&conn, name)?;
     let rooms = schema::list_rooms(&conn, project.id)?;
     let mem_scopes = schema::count_memory_scopes(&conn, project.id)?;
     let mem_articles = schema::count_memory(&conn, project.id)?;
@@ -373,7 +373,7 @@ fn tool_get_project(args: &Value) -> Result<Value> {
 
 fn tool_get_room(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let room_name = arg_str(args, "room").ok_or_else(|| anyhow::anyhow!("room required"))?;
     let room = schema::get_room_by_name(&conn, project.id, room_name)?
         .ok_or_else(|| anyhow::anyhow!("room '{}' not found", room_name))?;
@@ -400,7 +400,7 @@ fn tool_query(args: &Value) -> Result<Value> {
     let kind_filter = arg_str(args, "kind");
 
     let project_id = match arg_str(args, "project") {
-        Some(name) => Some(get_project_by_input(&conn, name)?.id),
+        Some(name) => Some(schema::get_project(&conn, name)?.id),
         None => None,
     };
 
@@ -463,7 +463,7 @@ fn tool_index(args: &Value) -> Result<Value> {
     let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let conn = db::open_default()?;
-    let head = git_head_short(&root);
+    let head = walker::git_head_short(&root);
     let project_id = schema::upsert_project(&conn, name, &root.to_string_lossy(), head.as_deref())?;
 
     let languages = crate::registry::built_in_languages();
@@ -524,7 +524,7 @@ fn tool_index(args: &Value) -> Result<Value> {
 
 fn tool_diff(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let root = std::path::Path::new(&project.root_path);
     if !root.exists() {
         anyhow::bail!("project root no longer exists");
@@ -554,7 +554,7 @@ fn tool_diff(args: &Value) -> Result<Value> {
     let removed: Vec<String> = existing.keys().filter(|k| !current.contains(k.as_str())).cloned().collect();
 
     Ok(json!({
-        "head_commit": git_head_short(root),
+        "head_commit": walker::git_head_short(root),
         "indexed_commit": project.head_commit,
         "changed": changed, "added": added, "removed": removed
     }))
@@ -562,7 +562,7 @@ fn tool_diff(args: &Value) -> Result<Value> {
 
 fn tool_get_children(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let file = arg_str(args, "file").ok_or_else(|| anyhow::anyhow!("file required"))?;
     let rels = schema::get_children(&conn, project.id, file)?;
     let mut seen = std::collections::HashSet::new();
@@ -576,7 +576,7 @@ fn tool_get_children(args: &Value) -> Result<Value> {
 
 fn tool_get_parents(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let file = arg_str(args, "file").ok_or_else(|| anyhow::anyhow!("file required"))?;
     let rels = schema::get_parents(&conn, project.id, file)?;
     let mut seen = std::collections::HashSet::new();
@@ -589,7 +589,7 @@ fn tool_get_parents(args: &Value) -> Result<Value> {
 
 fn tool_get_tree(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let file = arg_str(args, "file").ok_or_else(|| anyhow::anyhow!("file required"))?;
     let depth = arg_i64(args, "depth").unwrap_or(10) as usize;
     let tree = relationships::traverse_tree(&conn, project.id, file, depth)?;
@@ -601,7 +601,7 @@ fn tool_get_tree(args: &Value) -> Result<Value> {
 
 fn tool_get_impact(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let file = arg_str(args, "file").ok_or_else(|| anyhow::anyhow!("file required"))?;
     let depth = arg_i64(args, "depth").unwrap_or(10) as usize;
     let tree = relationships::traverse_impact(&conn, project.id, file, depth)?;
@@ -627,7 +627,7 @@ fn tool_memory_list(args: &Value) -> Result<Value> {
             Ok(json!(result))
         }
         (Some(proj_input), None, None) => {
-            let project = get_project_by_input(&conn, proj_input)?;
+            let project = schema::get_project(&conn, proj_input)?;
             let scopes = schema::list_memory_scopes(&conn, project.id)?;
             let result: Vec<Value> = scopes.iter().map(|s| {
                 let articles = schema::list_memory_by_scope(&conn, s.id).unwrap_or_default();
@@ -637,8 +637,8 @@ fn tool_memory_list(args: &Value) -> Result<Value> {
             Ok(json!(result))
         }
         (Some(proj_input), Some(scope_input), None) => {
-            let project = get_project_by_input(&conn, proj_input)?;
-            let scope = get_scope_by_input(&conn, project.id, scope_input)?;
+            let project = schema::get_project(&conn, proj_input)?;
+            let scope = schema::get_scope(&conn, project.id, scope_input)?;
             let articles = schema::list_memory_by_scope(&conn, scope.id)?;
             let result: Vec<Value> = articles.iter().map(|a| {
                 json!({ "id": a.id, "title": a.title, "tags": a.tags, "stale": a.stale, "author": a.author })
@@ -646,8 +646,8 @@ fn tool_memory_list(args: &Value) -> Result<Value> {
             Ok(json!(result))
         }
         (Some(proj_input), Some(scope_input), Some(article_input)) => {
-            let project = get_project_by_input(&conn, proj_input)?;
-            let scope = get_scope_by_input(&conn, project.id, scope_input)?;
+            let project = schema::get_project(&conn, proj_input)?;
+            let scope = schema::get_scope(&conn, project.id, scope_input)?;
             let articles = schema::list_memory_by_scope(&conn, scope.id)?;
             let article = if let Ok(id) = article_input.parse::<i64>() {
                 articles.into_iter().find(|a| a.id == id)
@@ -670,7 +670,7 @@ fn tool_memory_list(args: &Value) -> Result<Value> {
 
 fn tool_memory_write(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
     let scope_name = arg_str(args, "scope").ok_or_else(|| anyhow::anyhow!("scope required"))?;
     let title = arg_str(args, "title").ok_or_else(|| anyhow::anyhow!("title required"))?;
     let body = arg_str(args, "body").ok_or_else(|| anyhow::anyhow!("body required"))?;
@@ -698,8 +698,8 @@ fn tool_memory_update(args: &Value) -> Result<Value> {
 
 fn tool_memory_delete(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
-    let project = get_project_by_input(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
-    let scope = get_scope_by_input(&conn, project.id, arg_str(args, "scope").ok_or_else(|| anyhow::anyhow!("scope required"))?)?;
+    let project = schema::get_project(&conn, arg_str(args, "project").ok_or_else(|| anyhow::anyhow!("project required"))?)?;
+    let scope = schema::get_scope(&conn, project.id, arg_str(args, "scope").ok_or_else(|| anyhow::anyhow!("scope required"))?)?;
 
     match arg_str(args, "article") {
         Some(article_input) => {
@@ -729,7 +729,7 @@ fn tool_memory_search(args: &Value) -> Result<Value> {
     let conn = db::open_default()?;
     let query = arg_str(args, "query").ok_or_else(|| anyhow::anyhow!("query required"))?;
     let project_id = match arg_str(args, "project") {
-        Some(name) => Some(get_project_by_input(&conn, name)?.id),
+        Some(name) => Some(schema::get_project(&conn, name)?.id),
         None => None,
     };
     let results = schema::search_memory(&conn, project_id, query)?;
@@ -739,42 +739,3 @@ fn tool_memory_search(args: &Value) -> Result<Value> {
     Ok(json!(entries))
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn get_project_by_input(conn: &rusqlite::Connection, input: &str) -> Result<schema::Project> {
-    if let Ok(id) = input.parse::<i64>() {
-        let projects = schema::list_projects(conn)?;
-        projects.into_iter().find(|p| p.id == id)
-            .ok_or_else(|| anyhow::anyhow!("project #{id} not found"))
-    } else {
-        schema::get_project_by_name(conn, input)?
-            .ok_or_else(|| anyhow::anyhow!("project '{}' not found", input))
-    }
-}
-
-fn get_scope_by_input(conn: &rusqlite::Connection, project_id: i64, input: &str) -> Result<schema::MemoryScope> {
-    if let Ok(id) = input.parse::<i64>() {
-        schema::get_memory_scope_by_id(conn, id)?
-            .ok_or_else(|| anyhow::anyhow!("scope #{id} not found"))
-    } else {
-        schema::get_memory_scope_by_name(conn, project_id, input)?
-            .ok_or_else(|| anyhow::anyhow!("scope '{}' not found", input))
-    }
-}
-
-fn git_head_short(root: &std::path::Path) -> Option<String> {
-    std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(root)
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-}

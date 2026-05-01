@@ -15,7 +15,23 @@ pub struct SourceFile {
 pub fn hash_file(path: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     let digest = Sha256::digest(&bytes);
-    Some(format!("{:x}", digest))
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    Some(hex)
+}
+
+pub fn git_head_short(root: &Path) -> Option<String> {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(root)
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
 }
 
 /// Walks `root` in parallel using all available CPU cores, producing both the

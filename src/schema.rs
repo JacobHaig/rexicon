@@ -50,6 +50,19 @@ pub fn upsert_project(
     Ok(id)
 }
 
+pub fn get_project_by_id(conn: &Connection, id: i64) -> Result<Option<Project>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, root_path, tech_stack, architecture, entry_points,
+                head_commit, last_indexed, created_at, updated_at
+         FROM projects WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query(params![id])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row_to_project(row)?)),
+        None => Ok(None),
+    }
+}
+
 pub fn get_project_by_name(conn: &Connection, name: &str) -> Result<Option<Project>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, root_path, tech_stack, architecture, entry_points,
@@ -115,6 +128,16 @@ fn row_to_project(row: &rusqlite::Row) -> Result<Project> {
     })
 }
 
+pub fn get_project(conn: &Connection, input: &str) -> Result<Project> {
+    if let Ok(id) = input.parse::<i64>() {
+        get_project_by_id(conn, id)?
+            .ok_or_else(|| anyhow::anyhow!("project #{id} not found"))
+    } else {
+        get_project_by_name(conn, input)?
+            .ok_or_else(|| anyhow::anyhow!("project '{}' not found", input))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Room
 // ---------------------------------------------------------------------------
@@ -154,21 +177,23 @@ pub fn upsert_room(
     Ok(id)
 }
 
+fn row_to_room(row: &rusqlite::Row) -> rusqlite::Result<Room> {
+    Ok(Room {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        name: row.get(2)?,
+        path: row.get(3)?,
+        summary: row.get(4)?,
+        parent_room_id: row.get(5)?,
+    })
+}
+
 pub fn list_rooms(conn: &Connection, project_id: i64) -> Result<Vec<Room>> {
     let mut stmt = conn.prepare(
         "SELECT id, project_id, name, path, summary, parent_room_id
          FROM rooms WHERE project_id = ?1 ORDER BY name",
     )?;
-    let rows = stmt.query_map(params![project_id], |row| {
-        Ok(Room {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            name: row.get(2)?,
-            path: row.get(3)?,
-            summary: row.get(4)?,
-            parent_room_id: row.get(5)?,
-        })
-    })?;
+    let rows = stmt.query_map(params![project_id], row_to_room)?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
@@ -179,28 +204,13 @@ pub fn get_room_by_id(conn: &Connection, id: i64) -> Result<Option<Room>> {
     )?;
     let mut rows = stmt.query(params![id])?;
     match rows.next()? {
-        Some(row) => Ok(Some(Room {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            name: row.get(2)?,
-            path: row.get(3)?,
-            summary: row.get(4)?,
-            parent_room_id: row.get(5)?,
-        })),
+        Some(row) => Ok(Some(row_to_room(row)?)),
         None => Ok(None),
     }
 }
 
 pub fn delete_room_by_id(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM rooms WHERE id = ?1", params![id])?;
-    Ok(())
-}
-
-pub fn delete_rooms_for_project(conn: &Connection, project_id: i64) -> Result<()> {
-    conn.execute(
-        "DELETE FROM rooms WHERE project_id = ?1",
-        params![project_id],
-    )?;
     Ok(())
 }
 
@@ -215,14 +225,7 @@ pub fn get_room_by_name(
     )?;
     let mut rows = stmt.query(params![project_id, name])?;
     match rows.next()? {
-        Some(row) => Ok(Some(Room {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            name: row.get(2)?,
-            path: row.get(3)?,
-            summary: row.get(4)?,
-            parent_room_id: row.get(5)?,
-        })),
+        Some(row) => Ok(Some(row_to_room(row)?)),
         None => Ok(None),
     }
 }
@@ -285,13 +288,6 @@ pub fn delete_topic_by_id(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-pub fn delete_topics_for_project(conn: &Connection, project_id: i64) -> Result<()> {
-    conn.execute(
-        "DELETE FROM topics WHERE room_id IN (SELECT id FROM rooms WHERE project_id = ?1)",
-        params![project_id],
-    )?;
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // Symbol (DB)
@@ -611,6 +607,16 @@ pub fn get_memory_scope_by_id(conn: &Connection, id: i64) -> Result<Option<Memor
 pub fn delete_memory_scope(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM memory_scopes WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+pub fn get_scope(conn: &Connection, project_id: i64, input: &str) -> Result<MemoryScope> {
+    if let Ok(id) = input.parse::<i64>() {
+        get_memory_scope_by_id(conn, id)?
+            .ok_or_else(|| anyhow::anyhow!("scope #{id} not found"))
+    } else {
+        get_memory_scope_by_name(conn, project_id, input)?
+            .ok_or_else(|| anyhow::anyhow!("scope '{}' not found", input))
+    }
 }
 
 // ---------------------------------------------------------------------------

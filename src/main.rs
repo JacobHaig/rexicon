@@ -442,7 +442,7 @@ fn cmd_legacy(
 
     // Also store in database
     if let Ok(conn) = db::open_default() {
-        let head = git_head(&root);
+        let head = walker::git_head_short(&root);
         if let Ok(project_id) =
             schema::upsert_project(&conn, project_name, &root.to_string_lossy(), head.as_deref())
         {
@@ -492,7 +492,7 @@ fn cmd_index(
         .unwrap_or("project");
 
     let conn = db::open_default()?;
-    let head = git_head(&root);
+    let head = walker::git_head_short(&root);
     let project_id =
         schema::upsert_project(&conn, project_name, &root.to_string_lossy(), head.as_deref())?;
 
@@ -670,7 +670,7 @@ fn cmd_show(
         }
     };
 
-    let project = get_project(&conn, project_name)?;
+    let project = schema::get_project(&conn, project_name)?;
 
     match room_name {
         None => {
@@ -933,7 +933,7 @@ fn cmd_query(
 
 fn cmd_export(project_name: &str, format: Format, output_path: Option<PathBuf>) -> Result<()> {
     let conn = db::open_default()?;
-    let project = get_project(&conn, project_name)?;
+    let project = schema::get_project(&conn, project_name)?;
 
     let root = PathBuf::from(&project.root_path);
     let languages = registry::built_in_languages();
@@ -972,7 +972,7 @@ fn cmd_export(project_name: &str, format: Format, output_path: Option<PathBuf>) 
 
 fn cmd_export_memory(project_name: &str, output_dir: Option<PathBuf>) -> Result<()> {
     let conn = db::open_default()?;
-    let project = get_project(&conn, project_name)?;
+    let project = schema::get_project(&conn, project_name)?;
 
     let topics = schema::list_memory_scopes(&conn, project.id)?;
     if topics.is_empty() {
@@ -1027,7 +1027,7 @@ fn cmd_export_memory(project_name: &str, output_dir: Option<PathBuf>) -> Result<
 
 fn cmd_export_full(project_name: &str, output_dir: Option<PathBuf>) -> Result<()> {
     let conn = db::open_default()?;
-    let project = get_project(&conn, project_name)?;
+    let project = schema::get_project(&conn, project_name)?;
 
     let base = output_dir.unwrap_or_else(|| PathBuf::from(".rexicon"));
     std::fs::create_dir_all(&base)?;
@@ -1139,29 +1139,6 @@ fn cmd_export_full(project_name: &str, output_dir: Option<PathBuf>) -> Result<()
 // Memory command
 // ---------------------------------------------------------------------------
 
-fn get_project(conn: &rusqlite::Connection, input: &str) -> Result<schema::Project> {
-    if let Ok(id) = input.parse::<i64>() {
-        let projects = schema::list_projects(conn)?;
-        projects
-            .into_iter()
-            .find(|p| p.id == id)
-            .ok_or_else(|| anyhow::anyhow!("project #{id} not found"))
-    } else {
-        schema::get_project_by_name(conn, input)?
-            .ok_or_else(|| anyhow::anyhow!("project '{}' not found", input))
-    }
-}
-
-fn get_scope(conn: &rusqlite::Connection, project_id: i64, input: &str) -> Result<schema::MemoryScope> {
-    if let Ok(id) = input.parse::<i64>() {
-        schema::get_memory_scope_by_id(conn, id)?
-            .ok_or_else(|| anyhow::anyhow!("scope #{id} not found"))
-    } else {
-        schema::get_memory_scope_by_name(conn, project_id, input)?
-            .ok_or_else(|| anyhow::anyhow!("scope '{}' not found", input))
-    }
-}
-
 fn cmd_memory(action: MemoryAction) -> Result<()> {
     let conn = db::open_default()?;
 
@@ -1174,7 +1151,7 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
             tags,
             author,
         } => {
-            let proj = get_project(&conn, &project)?;
+            let proj = schema::get_project(&conn, &project)?;
             let topic_id = schema::upsert_memory_scope(&conn, proj.id, &scope)?;
             let tag_list: Option<Vec<String>> = tags.map(|t| {
                 t.split(',')
@@ -1226,7 +1203,7 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
                 }
                 // Level 2: project → list topics in that project
                 (Some(proj_input), None, None) => {
-                    let proj = get_project(&conn, proj_input)?;
+                    let proj = schema::get_project(&conn, proj_input)?;
                     let topics = schema::list_memory_scopes(&conn, proj.id)?;
                     if topics.is_empty() {
                         eprintln!("no memory scopes in '{}'", proj.name);
@@ -1250,8 +1227,8 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
                 }
                 // Level 3: project + scope → list article titles
                 (Some(proj_input), Some(scope_input), None) => {
-                    let proj = get_project(&conn, proj_input)?;
-                    let scope = get_scope(&conn, proj.id, scope_input)?;
+                    let proj = schema::get_project(&conn, proj_input)?;
+                    let scope = schema::get_scope(&conn, proj.id, scope_input)?;
                     let articles = schema::list_memory_by_scope(&conn, scope.id)?;
                     if articles.is_empty() {
                         eprintln!("no articles in '{}/{}'", proj.name, scope.name);
@@ -1270,8 +1247,8 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
                 }
                 // Level 4: project + scope + title → show full article
                 (Some(proj_input), Some(scope_input), Some(title_input)) => {
-                    let proj = get_project(&conn, proj_input)?;
-                    let scope = get_scope(&conn, proj.id, scope_input)?;
+                    let proj = schema::get_project(&conn, proj_input)?;
+                    let scope = schema::get_scope(&conn, proj.id, scope_input)?;
                     let articles = schema::list_memory_by_scope(&conn, scope.id)?;
 
                     let article = if let Ok(id) = title_input.parse::<i64>() {
@@ -1336,8 +1313,8 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
             let proj_input = project.ok_or_else(|| anyhow::anyhow!("project required: memory delete <project> <scope> [article]"))?;
             let scope_input = scope.ok_or_else(|| anyhow::anyhow!("scope required: memory delete <project> <scope> [article]"))?;
 
-            let proj = get_project(&conn, &proj_input)?;
-            let scope = get_scope(&conn, proj.id, &scope_input)?;
+            let proj = schema::get_project(&conn, &proj_input)?;
+            let scope = schema::get_scope(&conn, proj.id, &scope_input)?;
 
             match title {
                 Some(title_input) => {
@@ -1370,7 +1347,7 @@ fn cmd_memory(action: MemoryAction) -> Result<()> {
         MemoryAction::Search { query, project } => {
             let project_id = match &project {
                 Some(name) => {
-                    let p = get_project(&conn, name)?;
+                    let p = schema::get_project(&conn, name)?;
                     Some(p.id)
                 }
                 None => None,
@@ -1401,7 +1378,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
 
     match action {
         GraphAction::Children { project, file } => {
-            let proj = get_project(&conn, &project)?;
+            let proj = schema::get_project(&conn, &project)?;
             let rels = schema::get_children(&conn, proj.id, &file)?;
             let mut seen = std::collections::HashSet::new();
             let resolved_rels: Vec<_> = rels
@@ -1420,7 +1397,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
             }
         }
         GraphAction::Parents { project, file } => {
-            let proj = get_project(&conn, &project)?;
+            let proj = schema::get_project(&conn, &project)?;
             let rels = schema::get_parents(&conn, proj.id, &file)?;
             let mut seen = std::collections::HashSet::new();
             let deduped: Vec<_> = rels
@@ -1441,7 +1418,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
             file,
             depth,
         } => {
-            let proj = get_project(&conn, &project)?;
+            let proj = schema::get_project(&conn, &project)?;
             let tree = relationships::traverse_tree(&conn, proj.id, &file, depth)?;
             if tree.is_empty() {
                 eprintln!("{file} has no dependency tree");
@@ -1454,7 +1431,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
             file,
             depth,
         } => {
-            let proj = get_project(&conn, &project)?;
+            let proj = schema::get_project(&conn, &project)?;
             let tree = relationships::traverse_impact(&conn, proj.id, &file, depth)?;
             if tree.is_empty() {
                 eprintln!("{file} has no impact tree");
@@ -1473,7 +1450,7 @@ fn cmd_graph(action: GraphAction) -> Result<()> {
 
 fn cmd_diff(project_name: &str) -> Result<()> {
     let conn = db::open_default()?;
-    let project = get_project(&conn, project_name)?;
+    let project = schema::get_project(&conn, project_name)?;
 
     let root = PathBuf::from(&project.root_path);
     if !root.exists() {
@@ -1525,7 +1502,7 @@ fn cmd_diff(project_name: &str) -> Result<()> {
         }
     }
 
-    let head = git_head(&root).unwrap_or_default();
+    let head = walker::git_head_short(&root).unwrap_or_default();
     let indexed_commit = project.head_commit.as_deref().unwrap_or("unknown");
 
     println!(
@@ -1609,19 +1586,4 @@ fn get_output_path(root: &std::path::Path, output: Option<&PathBuf>) -> Result<P
         }
         None => Ok(root.join("rexicon.txt")),
     }
-}
-
-fn git_head(root: &std::path::Path) -> Option<String> {
-    std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(root)
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
 }

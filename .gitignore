@@ -23,3 +23,6 @@ target/
 # Cached rexicon binary downloaded by the rexicon skill on first run
 .claude/skills/rexicon/bin/
 .DS_Store
+
+
+.rexicon

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusqlite::Connection;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use crate::schema;
@@ -80,7 +80,7 @@ pub fn generate_topics(
     let rooms = schema::list_rooms(conn, project_id)?;
     let room_map: BTreeMap<String, i64> = rooms.iter().map(|r| (r.name.clone(), r.id)).collect();
 
-    let mut current_topics: std::collections::HashSet<(i64, String)> = std::collections::HashSet::new();
+    let mut current_topics: HashSet<(i64, String)> = HashSet::new();
 
     for fi in indices {
         let room_name = room_for_file(&fi.rel_path.to_string_lossy());
